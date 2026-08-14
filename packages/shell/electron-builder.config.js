@@ -61,7 +61,9 @@ module.exports = {
     // packaging step before the notary ever runs.
     gatekeeperAssess: false,
     ...(signing ? {} : { identity: null }),
-    ...(signing && notarizeReady ? { notarize: { teamId: process.env.APPLE_TEAM_ID } } : { notarize: false }),
+    // `true`, not `{ teamId }`: electron-builder reads APPLE_TEAM_ID from the
+    // environment and warns that passing it in config is deprecated.
+    ...(signing && notarizeReady ? { notarize: true } : { notarize: false }),
   },
 
   dmg: {
