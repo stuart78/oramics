@@ -14,3 +14,14 @@ packages/shell/release/
 # Generated app icon, rebuilt with `pnpm icon`. The rest of build-resources
 # (entitlements) is committed.
 packages/shell/build-resources/icon.png
+
+# Signing material. Never commit these. A .p12 holds the private key that
+# proves software came from you; if it leaks, someone else can sign as you.
+# The certificate belongs in your keychain, in GitHub Actions secrets, and in
+# an offline backup. Not here.
+*.p12
+*.pfx
+*.cer
+*.certSigningRequest
+*.mobileprovision
+*.provisionprofile

@@ -189,7 +189,24 @@ creates for you: those are for debugging and for the Mac App Store, and neither
 one works for a DMG people download. Only the team's Account Holder can create
 a Developer ID certificate.
 
-Five repository secrets switch it on:
+The exported `.p12` holds the private key. Do not commit it, to this repo or
+any other. Git history is permanent, so deleting it in a later commit does not
+remove it, and a leaked Developer ID key lets someone sign software as you until
+Apple revokes the certificate, which breaks every build already shipped.
+
+Keep three copies: your keychain (where local signing reads it from), GitHub
+Actions secrets (base64, for CI), and an offline backup with the export
+password. Losing the private key means you cannot sign updates to anything you
+have already released.
+
+Treat the exported file as temporary. Upload it and delete it:
+
+```bash
+gh secret set APPLE_CERT_P12 < <(base64 -i ~/Downloads/developer-id.p12)
+rm ~/Downloads/developer-id.p12
+```
+
+Five repository secrets switch signing on:
 
 | Secret | What it is |
 |---|---|
