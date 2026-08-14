@@ -1,6 +1,6 @@
 {
   "name": "@oramics/shell",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "private": true,
   "description": "Electron shell: window management, projector display, file save",
   "author": "Stuart Smith",

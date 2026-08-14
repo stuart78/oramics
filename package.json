@@ -1,7 +1,7 @@
 {
   "name": "oramics",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A drawn-sound DAW after Daphne Oram's Oramics machine",
   "type": "module",
   "scripts": {
@@ -20,6 +20,9 @@
   },
   "packageManager": "pnpm@10.28.1",
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "electron"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "electron"
+    ]
   }
 }
