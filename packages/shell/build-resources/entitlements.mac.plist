@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!--
+    The hardened runtime blocks writable-executable memory by default, which
+    stops V8 dead. These three are the standard set every Electron app needs.
+
+    Nothing else is here on purpose. The app plays audio but never records, so
+    it does not ask for microphone access and macOS will not prompt for it. It
+    is not sandboxed either, since that is a Mac App Store requirement and the
+    save dialog works without it.
+  -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

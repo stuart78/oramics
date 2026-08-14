@@ -11,5 +11,6 @@ packages/template/out/
 packages/shell/renderer/
 packages/shell/release/
 
-# Generated app icon — regenerate with `pnpm icon`
-packages/shell/build-resources/
+# Generated app icon, rebuilt with `pnpm icon`. The rest of build-resources
+# (entitlements) is committed.
+packages/shell/build-resources/icon.png

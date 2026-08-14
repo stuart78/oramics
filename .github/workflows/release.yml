@@ -46,10 +46,37 @@ jobs:
         run: pnpm --filter @oramics/shell run release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Unsigned on every platform. Signing macOS needs an Apple Developer
-          # account and Windows needs a code-signing certificate; without them
-          # electron-builder should skip rather than fail.
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+          # macOS signing. electron-builder imports the certificate from
+          # CSC_LINK into a temporary keychain itself, so there is no keychain
+          # handling to do here.
+          CSC_LINK: ${{ secrets.APPLE_CERT_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+
+          # Notarising. All three are needed; electron-builder.config.js skips
+          # the notary step if any are missing rather than failing the build.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+          # Without a certificate secret this is 'false', which builds unsigned
+          # rather than erroring. So a fork with no credentials still releases.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.APPLE_CERT_P12 != '' }}
+
+      # Notarising is a round trip to Apple and can take a few minutes. Worth
+      # confirming rather than assuming, since an unnotarised build looks
+      # identical until someone else opens it.
+      - name: Check the macOS build is signed and stapled
+        if: matrix.os == 'macos-latest'
+        run: |
+          APP="packages/shell/release/mac-arm64/Oramics.app"
+          [ -d "$APP" ] || APP="packages/shell/release/mac/Oramics.app"
+          echo "== codesign =="
+          codesign -dv --verbose=2 "$APP" 2>&1 | grep -E "Authority|TeamIdentifier|flags" || true
+          echo "== gatekeeper =="
+          spctl -a -vvv -t install "$APP" 2>&1 || echo "not accepted (expected if unsigned or not notarised)"
+          echo "== staple =="
+          xcrun stapler validate "$APP" 2>&1 || echo "no notarisation ticket stapled"
 
       - name: Keep the artifacts even if publishing failed
         if: always()

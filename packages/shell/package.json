@@ -10,100 +10,13 @@
     "icon": "node ../../scripts/make-icon.mjs",
     "start": "electron .",
     "stage": "pnpm --filter @oramics/app run build && node stage.mjs",
-    "build": "pnpm run stage && electron-builder --mac --publish never",
-    "build:universal": "pnpm run stage && electron-builder --mac --universal --publish never",
-    "build:dir": "pnpm run stage && electron-builder --mac --dir --publish never",
-    "build:current": "pnpm run stage && electron-builder --publish never",
-    "release": "pnpm run stage && electron-builder --publish always"
+    "build": "pnpm run stage && electron-builder --config electron-builder.config.js --mac --publish never",
+    "build:unsigned": "CSC_IDENTITY_AUTO_DISCOVERY=false pnpm run stage && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.config.js --mac --publish never",
+    "build:dir": "CSC_IDENTITY_AUTO_DISCOVERY=false pnpm run stage && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --config electron-builder.config.js --mac --dir --publish never",
+    "release": "pnpm run stage && electron-builder --config electron-builder.config.js --publish always"
   },
   "devDependencies": {
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8"
-  },
-  "build": {
-    "appId": "net.oramics.workshop",
-    "productName": "Oramics",
-    "copyright": "After Daphne Oram",
-    "directories": {
-      "output": "release",
-      "buildResources": "build-resources"
-    },
-    "files": [
-      "main.cjs",
-      "preload.cjs",
-      "renderer/**/*",
-      "package.json"
-    ],
-    "mac": {
-      "category": "public.app-category.music",
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        }
-      ],
-      "identity": null,
-      "darkModeSupport": true
-    },
-    "dmg": {
-      "title": "Oramics ${version}"
-    },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "stuart78",
-        "repo": "oramics"
-      }
-    ],
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "zip",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ]
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    },
-    "linux": {
-      "category": "AudioVideo",
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "tar.gz",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
-    }
   }
 }

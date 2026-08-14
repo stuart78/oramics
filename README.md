@@ -177,16 +177,43 @@ avoids the usual pnpm and electron-builder hoisting problems.
 The icon is generated rather than committed. `pnpm icon` writes
 `packages/shell/build-resources/icon.png` and electron-builder converts it.
 
-Builds are unsigned. On macOS, Gatekeeper will refuse the app unless you
+### Signing
+
+The macOS build signs and notarises itself when the credentials are present,
+and builds unsigned when they are not, so a clone without an Apple account
+still works. See `packages/shell/electron-builder.config.js`.
+
+Signing needs a **Developer ID Application** certificate. This is a different
+thing from the Apple Development and Apple Distribution certificates Xcode
+creates for you: those are for debugging and for the Mac App Store, and neither
+one works for a DMG people download. Only the team's Account Holder can create
+a Developer ID certificate.
+
+Five repository secrets switch it on:
+
+| Secret | What it is |
+|---|---|
+| `APPLE_CERT_P12` | The Developer ID certificate, exported as .p12 and base64 encoded |
+| `APPLE_CERT_PASSWORD` | The password you set when exporting it |
+| `APPLE_ID` | Your Apple ID email |
+| `APPLE_APP_SPECIFIC_PASSWORD` | From appleid.apple.com, not your account password |
+| `APPLE_TEAM_ID` | The ten-character team identifier |
+
+Notarising matters as much as signing. A signed but unnotarised app is still
+blocked on any machine that has not seen it before. The release workflow runs
+`codesign`, `spctl` and `stapler validate` afterwards and prints the results,
+because the difference is invisible until someone else tries to open it.
+
+Windows builds are unsigned, so SmartScreen shows a warning users can click
+through. Certificates now have to live on hardware or in a cloud HSM, which
+puts them at roughly $200 to $400 a year.
+
+Until macOS signing is switched on, Gatekeeper refuses the app unless you
 right-click and Open once, or run:
 
 ```bash
 xattr -dr com.apple.quarantine /Applications/Oramics.app
 ```
-
-Signing macOS needs an Apple Developer account and Windows needs a code-signing
-certificate. Worth doing before a workshop if the app is going onto a machine
-that is not yours.
 
 ## Licence and attribution
 
