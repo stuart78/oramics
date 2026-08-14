@@ -1,0 +1,25 @@
+{
+  "name": "oramics",
+  "private": true,
+  "version": "0.0.1",
+  "description": "A drawn-sound DAW after Daphne Oram's Oramics machine",
+  "type": "module",
+  "scripts": {
+    "dev": "pnpm --filter @oramics/shell run dev",
+    "fix:electron": "node scripts/fix-electron.mjs",
+    "icon": "node scripts/make-icon.mjs",
+    "template": "pnpm --filter @oramics/template run generate",
+    "build": "pnpm --filter @oramics/app run build",
+    "dist": "pnpm --filter @oramics/shell run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2"
+  },
+  "packageManager": "pnpm@10.28.1",
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "electron"]
+  }
+}

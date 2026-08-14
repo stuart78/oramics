@@ -1,0 +1,15 @@
+node_modules/
+dist/
+out/
+*.tsbuildinfo
+.DS_Store
+
+# Generated print templates — regenerate with `pnpm template`
+packages/template/out/
+
+# Packaging: staged renderer copy and electron-builder output
+packages/shell/renderer/
+packages/shell/release/
+
+# Generated app icon — regenerate with `pnpm icon`
+packages/shell/build-resources/

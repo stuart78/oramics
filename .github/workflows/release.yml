@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # Each platform builds on its own runner. Cross-compiling Electron from one
+    # host is possible but fragile — Windows installers want wine, Linux
+    # AppImages want their own tooling — and the failures surface late.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+          - os: windows-latest
+            name: Windows
+          - os: ubuntu-latest
+            name: Linux
+
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Generated rather than committed, so it has to exist before packaging.
+      - run: pnpm icon
+
+      - name: Build and publish
+        run: pnpm --filter @oramics/shell run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Unsigned on every platform. Signing macOS needs an Apple Developer
+          # account and Windows needs a code-signing certificate; without them
+          # electron-builder should skip rather than fail.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Keep the artifacts even if publishing failed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oramics-${{ matrix.name }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            packages/shell/release/*.dmg
+            packages/shell/release/*.zip
+            packages/shell/release/*.exe
+            packages/shell/release/*.AppImage
+            packages/shell/release/*.tar.gz

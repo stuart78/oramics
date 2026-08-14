@@ -1,0 +1,127 @@
+#!/usr/bin/env node
+import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { parseArgs } from 'node:util';
+
+import { NOMINAL_SPEED_MM_PER_S, SHEET_DURATION_S, TIME_FIELD_WIDTH_MM } from './geometry.js';
+import { ROLES, getRole } from './roles.js';
+import { machinePayload, makeSheetId, slidesPayload, soloPayload } from './payload.js';
+import { buildDocument, type GridStyle, type Page } from './render.js';
+
+const usage = `
+Generate printable Oramics drawing sheets (US Legal, landscape).
+
+  pnpm template -- [options]
+
+By default you get the two-page workshop set: every time-domain lane as a band
+on page one, the four timbres on page two. Two sheets to scan per piece.
+
+Options
+  --layout <l>      workshop (default) | machine | slides | solo
+  --roles <a,b,c>   With --layout solo: which roles, one full sheet each.
+  --neumes          Add the binary pitch sheet. It needs a page of its own.
+  --list            Print the role table and exit.
+  --sheet <id>      8-char id shared by every page of one piece. Default: random.
+  --grid <style>    grey (default) | nonphoto
+  --out <path>      Output PDF. Default: out/oramics-sheets.pdf
+
+Roles for --layout solo: ${ROLES.map((r) => r.id).join(', ')}
+`;
+
+type Layout = 'workshop' | 'machine' | 'slides' | 'solo';
+
+const main = async (): Promise<void> => {
+  // `pnpm run generate -- --all` forwards the separator itself, and parseArgs
+  // would treat everything after it as positionals.
+  const argv = process.argv.slice(2);
+  const args = argv[0] === '--' ? argv.slice(1) : argv;
+
+  const { values } = parseArgs({
+    args,
+    options: {
+      layout: { type: 'string', default: 'workshop' },
+      roles: { type: 'string' },
+      neumes: { type: 'boolean', default: false },
+      list: { type: 'boolean', default: false },
+      sheet: { type: 'string' },
+      grid: { type: 'string', default: 'grey' },
+      out: { type: 'string', default: 'out/oramics-sheets.pdf' },
+      help: { type: 'boolean', default: false },
+    },
+  });
+
+  if (values.help) {
+    console.log(usage);
+    return;
+  }
+
+  if (values.list) {
+    for (const r of ROLES) {
+      console.log(`  ${r.id.padEnd(6)} ${r.kind.padEnd(9)} ${r.title} — ${r.blurb}`);
+    }
+    return;
+  }
+
+  const layout = values.layout as Layout;
+  if (!['workshop', 'machine', 'slides', 'solo'].includes(layout)) {
+    throw new Error(`--layout must be workshop, machine, slides or solo, got "${values.layout}"`);
+  }
+
+  const gridStyle = values.grid as GridStyle;
+  if (gridStyle !== 'grey' && gridStyle !== 'nonphoto') {
+    throw new Error(`--grid must be "grey" or "nonphoto", got "${values.grid}"`);
+  }
+
+  const sheetId = (values.sheet ?? makeSheetId()).toUpperCase();
+  const pages: Page[] = [];
+
+  if (layout === 'solo') {
+    const ids = values.roles?.split(',').map((s) => s.trim()).filter(Boolean);
+    if (!ids?.length) throw new Error('--layout solo needs --roles');
+    ids.forEach((id, i) => {
+      const role = getRole(id);
+      pages.push({
+        kind: 'solo',
+        options: { role, payload: soloPayload(sheetId, i + 1, role.id), gridStyle },
+      });
+    });
+  } else {
+    if (layout !== 'slides') {
+      pages.push({ kind: 'machine', options: { payload: machinePayload(sheetId), gridStyle } });
+    }
+    if (layout !== 'machine') {
+      pages.push({ kind: 'slides', options: { payload: slidesPayload(sheetId), gridStyle } });
+    }
+  }
+
+  // The binary pitch grid cannot shrink to a band — twelve bit rows plus a
+  // write-in row needs the full height — so it is always its own page.
+  if (values.neumes) {
+    const role = getRole('NEU');
+    pages.push({
+      kind: 'solo',
+      options: { role, payload: soloPayload(sheetId, 99, role.id), gridStyle },
+    });
+  }
+
+  const pdf = await buildDocument({ pages, title: `Oramics drawing sheets — ${sheetId}` });
+
+  const outPath = resolve(process.cwd(), values.out);
+  await mkdir(dirname(outPath), { recursive: true });
+  await writeFile(outPath, pdf);
+
+  console.log(`sheet id      ${sheetId}`);
+  console.log(`layout        ${layout}`);
+  console.log(`pages         ${pages.length}  (${pages.map((p) => p.kind).join(', ')})`);
+  console.log(
+    `time field    ${TIME_FIELD_WIDTH_MM} mm at ${NOMINAL_SPEED_MM_PER_S} mm/s = ${SHEET_DURATION_S.toFixed(3)} s`,
+  );
+  console.log(`grid          ${gridStyle}`);
+  console.log(`written       ${outPath}`);
+  console.log(`\nPrint at 100% / "Actual size". Do not scale to fit.`);
+};
+
+main().catch((err: unknown) => {
+  console.error(err instanceof Error ? err.message : err);
+  process.exitCode = 1;
+});

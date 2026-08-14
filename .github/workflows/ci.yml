@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The Electron binary is a ~250 MB download and nothing here needs it:
+      # the engine and template packages are plain TypeScript.
+      - run: pnpm install --frozen-lockfile
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+      - run: pnpm -r run typecheck
+      - run: pnpm -r run test
+
+      # The sheets are a deliverable; a change that stops them generating should
+      # fail here rather than on the morning of a workshop.
+      - run: pnpm template -- --neumes --sheet CI000000

@@ -1,0 +1,309 @@
+/*
+ * Two palettes over one set of tokens. The drawing surfaces are canvases, so
+ * they read these back through getComputedStyle rather than inheriting them —
+ * see DrawPad and PaintPad.
+ */
+:root,
+:root[data-theme='dark'] {
+  --bg: #0a090c;
+  --panel: #141317;
+  --line: #26242c;
+  --ink: #e8e4dd;
+  --muted: #8d8799;
+  --accent: #ff7a4d;
+  --pad-bg: #111013;
+  --pad-grid: #2a2830;
+  --pad-guide: #3d3a45;
+  --pad-ink: #e8e4dd;
+  --pad-fill: rgba(232, 228, 221, 0.22);
+  --control: #1e1c23;
+  --control-line: #34313d;
+  color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg: #f4f2ee;
+  --panel: #fffdfa;
+  --line: #d9d4cb;
+  --ink: #1b1a1e;
+  --muted: #6e6878;
+  --accent: #d2521f;
+  --pad-bg: #fffdfa;
+  --pad-grid: #e4dfd5;
+  --pad-guide: #cbc4b7;
+  --pad-ink: #1b1a1e;
+  --pad-fill: rgba(27, 26, 30, 0.16);
+  --control: #ffffff;
+  --control-line: #c8c1b5;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif;
+  overflow: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.bar,
+.fidelity {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+
+.bar {
+  gap: 18px;
+}
+
+/* Utilities sit right; transport and fidelity stay grouped on the left. */
+.bar > :last-child {
+  margin-left: auto;
+}
+
+/*
+ * Room for the macOS traffic lights, which overlap our header because the
+ * window uses a hidden inset title bar. Dragging the window by the header only
+ * makes sense there too, and every control inside has to opt back out.
+ */
+:root[data-shell='electron'] .bar {
+  padding-left: 84px;
+  -webkit-app-region: drag;
+}
+
+:root[data-shell='electron'] .bar button,
+:root[data-shell='electron'] .bar input,
+:root[data-shell='electron'] .bar label {
+  -webkit-app-region: no-drag;
+}
+
+.fidelity {
+  gap: 14px;
+  padding: 7px 16px;
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  letter-spacing: 0.12em;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.controls label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+}
+
+input[type='range'] {
+  width: 108px;
+  accent-color: var(--accent);
+}
+
+button {
+  background: var(--control);
+  color: var(--ink);
+  border: 1px solid var(--control-line);
+  border-radius: 5px;
+  padding: 6px 13px;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--accent);
+}
+
+button.primary {
+  min-width: 74px;
+  font-weight: 600;
+}
+
+button.primary.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a0e08;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.toggle input {
+  accent-color: var(--accent);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 11px;
+}
+
+.value,
+.readout {
+  font: 12px ui-monospace, SFMono-Regular, monospace;
+  color: var(--muted);
+  min-width: 46px;
+}
+
+.readout {
+  color: var(--accent);
+  min-width: 52px;
+  text-align: right;
+}
+
+.status {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.lanes {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+.lane,
+.timbre {
+  margin-bottom: 10px;
+}
+
+.lane-label {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin-bottom: 3px;
+}
+
+.pending {
+  font-size: 10px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  padding: 0 4px;
+  opacity: 0.75;
+}
+
+.drawpad {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.timbres {
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  flex: 0 0 auto;
+}
+
+/* Projector window */
+.projector {
+  height: 100%;
+  position: relative;
+}
+
+.projector canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.waiting {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+}
+
+.timbres-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 8px;
+}
+
+.timbres-head em {
+  color: var(--ink);
+  font-style: normal;
+}
+
+.timbres-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+.slide-tools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+
+.slide-tools label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.slide-tools input[type='range'] {
+  width: 76px;
+}
+
+.lane-label .dice {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.lane-label .dice:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
