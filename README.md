@@ -6,9 +6,9 @@ sound, on paper or on screen, and the machine plays what you drew.
 Built for running workshops. Print the sheets, let people draw on them, play the
 results.
 
-**[Download v0.0.1](https://github.com/stuart78/oramics/releases/tag/v0.0.1)**
-for macOS, Windows or Linux. The builds are unsigned, so see the release notes
-for the one-time step your OS will ask for.
+**[Download v0.0.2](https://github.com/stuart78/oramics/releases/tag/v0.0.2)**
+for macOS, Windows or Linux. The macOS build is signed and notarised, so it
+opens normally. Windows is unsigned and SmartScreen will warn once.
 
 ```bash
 pnpm install
