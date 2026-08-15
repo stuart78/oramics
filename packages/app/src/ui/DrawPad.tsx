@@ -3,15 +3,24 @@
  * normalised values, one per column, which is the same shape the extractor will
  * produce from a scanned sheet — so a drawn lane and a scanned lane are
  * indistinguishable downstream.
+ *
+ * Alongside the values it records which stroke wrote each column. A lane holds
+ * one value per column, so drawing over an existing line replaces it; the ids
+ * are how the pad knows to show the replacement as a mark of its own instead of
+ * splicing it into the line that was there.
  */
 
 import { useCallback, useEffect, useRef, type JSX } from 'react';
 
+import type { LaneTrack } from '../lanes.js';
 import { readPadPalette } from './palette.js';
+import { eachRun, nextStrokeId } from './runs.js';
+import { useViewWheel } from './useViewWheel.js';
+import { gridStep, type View } from './view.js';
 
 export interface DrawPadProps {
-  values: Float32Array;
-  onChange: (values: Float32Array) => void;
+  track: LaneTrack;
+  onChange: (track: LaneTrack) => void;
   /** 0-1 position of the read head, or null to hide it. */
   head?: number | null;
   bipolar?: boolean;
@@ -24,11 +33,19 @@ export interface DrawPadProps {
   erasing?: boolean;
   /** Only a repaint trigger — the colours come from the CSS tokens. */
   theme?: string;
+  /** The slice of the sheet on show. Shared across every lane. */
+  view: View;
+  onViewChange: (next: View) => void;
+  /** Seconds the whole field represents, for the grid. */
+  duration: number;
   disabled?: boolean;
 }
 
+/** Ink weight. Thick enough to read across a room on the projector. */
+const INK_WIDTH = 3;
+
 export const DrawPad = ({
-  values,
+  track,
   onChange,
   head = null,
   bipolar = false,
@@ -37,15 +54,21 @@ export const DrawPad = ({
   guides = [],
   erasing = false,
   theme = 'dark',
+  view,
+  onViewChange,
+  duration,
   disabled = false,
 }: DrawPadProps): JSX.Element => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const lastIndex = useRef<number | null>(null);
-  // Held in a ref so the render loop always sees the newest array without
+  const strokeId = useRef(0);
+  // Held in a ref so the render loop always sees the newest arrays without
   // re-subscribing every stroke.
-  const valuesRef = useRef(values);
-  valuesRef.current = values;
+  const trackRef = useRef(track);
+  trackRef.current = track;
+  const viewRef = useRef(view);
+  viewRef.current = view;
 
   const paint = useCallback(() => {
     const canvas = canvasRef.current;
@@ -66,11 +89,20 @@ export const DrawPad = ({
     ctx.fillStyle = pal.bg;
     ctx.fillRect(0, 0, w, h);
 
-    // One line per second, heavier every five.
+    const span = view.to - view.from;
+    /** Sheet fraction to pixels. */
+    const px = (f: number): number => ((f - view.from) / span) * w;
+
+    // Time grid, heavier every fifth line.
+    const step = gridStep(duration * span);
     ctx.lineWidth = 1;
-    for (let s = 1; s < 30; s++) {
-      ctx.strokeStyle = s % 5 === 0 ? pal.guide : pal.grid;
-      const x = Math.round((w * s) / 30) + 0.5;
+    const firstLine = Math.ceil((view.from * duration) / step);
+    const lastLine = Math.floor((view.to * duration) / step);
+    for (let k = firstLine; k <= lastLine; k++) {
+      const seconds = k * step;
+      if (seconds <= 0 || seconds >= duration) continue;
+      ctx.strokeStyle = k % 5 === 0 ? pal.guide : pal.grid;
+      const x = Math.round(px(seconds / duration)) + 0.5;
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, h);
@@ -94,51 +126,27 @@ export const DrawPad = ({
       ctx.stroke();
     }
 
-    const v = valuesRef.current;
-    const n = v.length;
-    const toX = (i: number): number => (i / (n - 1)) * w;
+    const { values, strokes } = trackRef.current;
+    const n = values.length;
+    const toX = (i: number): number => px(i / (n - 1));
     const toY = (val: number): number => h * (1 - Math.max(0, Math.min(1, val)));
 
-    /*
-     * Walk the lane in runs of drawn samples.
-     *
-     * Two things end a run. Undrawn stretches are NaN and must stay blank —
-     * bridging them would draw a line nobody drew, and a scanned sheet is
-     * mostly blank paper. And a full-height step between two adjacent columns
-     * ends one too: that only happens where a new stroke was laid over older
-     * values, and joining them paints a vertical line through the lane that
-     * nobody asked for. A stroke interpolates across its own span, so a real
-     * gesture never produces a jump this steep in a single column.
-     */
-    const BREAK = 0.35;
-    const eachRun = (visit: (from: number, to: number) => void): void => {
-      let start = -1;
-      for (let i = 0; i < n; i++) {
-        const drawn = Number.isFinite(v[i]!);
-        if (!drawn) {
-          if (start >= 0) visit(start, i - 1);
-          start = -1;
-          continue;
-        }
-        if (start < 0) {
-          start = i;
-          continue;
-        }
-        if (Math.abs(v[i]! - v[i - 1]!) > BREAK) {
-          visit(start, i - 1);
-          start = i;
-        }
-      }
-      if (start >= 0) visit(start, n - 1);
+    // Only walk what is on screen, plus a column either side so a run that
+    // continues past the edge still leaves the canvas at the right angle.
+    const bounds = {
+      values,
+      strokes,
+      from: Math.floor(view.from * (n - 1)) - 1,
+      to: Math.ceil(view.to * (n - 1)) + 1,
     };
 
     if (fill) {
       ctx.fillStyle = pal.fill;
-      eachRun((from, to) => {
+      eachRun(bounds, (from, to) => {
         if (to <= from) return;
         ctx.beginPath();
         ctx.moveTo(toX(from), h);
-        for (let i = from; i <= to; i++) ctx.lineTo(toX(i), toY(v[i]!));
+        for (let i = from; i <= to; i++) ctx.lineTo(toX(i), toY(values[i]!));
         ctx.lineTo(toX(to), h);
         ctx.closePath();
         ctx.fill();
@@ -146,18 +154,18 @@ export const DrawPad = ({
     }
 
     ctx.strokeStyle = pal.ink;
-    ctx.lineWidth = 1.75;
+    ctx.lineWidth = INK_WIDTH;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    eachRun((from, to) => {
+    eachRun(bounds, (from, to) => {
       ctx.beginPath();
       if (from === to) {
         // A single touched column still deserves a mark.
-        ctx.moveTo(toX(from), toY(v[from]!));
-        ctx.lineTo(toX(from) + 0.01, toY(v[from]!));
+        ctx.moveTo(toX(from), toY(values[from]!));
+        ctx.lineTo(toX(from) + 0.01, toY(values[from]!));
       } else {
         for (let i = from; i <= to; i++) {
-          const y = toY(v[i]!);
+          const y = toY(values[i]!);
           if (i === from) ctx.moveTo(toX(i), y);
           else ctx.lineTo(toX(i), y);
         }
@@ -165,20 +173,20 @@ export const DrawPad = ({
       ctx.stroke();
     });
 
-    if (head !== null) {
+    if (head !== null && head >= view.from && head <= view.to) {
       ctx.strokeStyle = pal.accent;
       ctx.lineWidth = 1.5;
-      const x = Math.round(head * w) + 0.5;
+      const x = Math.round(px(head)) + 0.5;
       ctx.beginPath();
       ctx.moveTo(x, 0);
       ctx.lineTo(x, h);
       ctx.stroke();
     }
-  }, [bipolar, fill, guides, head, theme]);
+  }, [bipolar, duration, fill, guides, head, theme, view]);
 
   useEffect(() => {
     paint();
-  }, [paint, values]);
+  }, [paint, track]);
 
   useEffect(() => {
     const onResize = (): void => paint();
@@ -186,51 +194,60 @@ export const DrawPad = ({
     return () => window.removeEventListener('resize', onResize);
   }, [paint]);
 
+  /** Where along the whole sheet a pointer event landed, 0-1. */
+  const sheetAt = (clientX: number, rect: DOMRect): number => {
+    const local = (clientX - rect.left) / rect.width;
+    const { from, to } = viewRef.current;
+    return from + local * (to - from);
+  };
+
   const write = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     const canvas = canvasRef.current;
     if (!canvas || disabled) return;
     const rect = canvas.getBoundingClientRect();
-    const n = valuesRef.current.length;
-    const index = Math.max(
-      0,
-      Math.min(n - 1, Math.round(((event.clientX - rect.left) / rect.width) * (n - 1))),
-    );
+    const n = trackRef.current.values.length;
+    const index = Math.max(0, Math.min(n - 1, Math.round(sheetAt(event.clientX, rect) * (n - 1))));
     const value = Math.max(0, Math.min(1, 1 - (event.clientY - rect.top) / rect.height));
 
-    const next = new Float32Array(valuesRef.current);
+    const values = new Float32Array(trackRef.current.values);
+    const strokes = new Int32Array(trackRef.current.strokes);
     const from = lastIndex.current;
 
     if (erasing) {
-      // A wider nib than the pen, so wiping is not fiddly.
-      const nib = Math.max(2, Math.round(next.length * 0.008));
+      // A wider nib than the pen, so wiping is not fiddly. Scaled to the view,
+      // so it stays the same size under the cursor however far you zoom in.
+      const span = viewRef.current.to - viewRef.current.from;
+      const nib = Math.max(1, Math.round(values.length * 0.008 * span));
       const lo = Math.min(from ?? index, index) - nib;
       const hi = Math.max(from ?? index, index) + nib;
-      for (let i = Math.max(0, lo); i <= Math.min(next.length - 1, hi); i++) {
-        next[i] = Number.NaN;
+      for (let i = Math.max(0, lo); i <= Math.min(values.length - 1, hi); i++) {
+        values[i] = Number.NaN;
+        strokes[i] = 0;
       }
-      lastIndex.current = index;
-      valuesRef.current = next;
-      onChange(next);
-      return;
-    }
-
-    if (from === null || from === index) {
-      next[index] = value;
+    } else if (from === null || from === index) {
+      values[index] = value;
+      strokes[index] = strokeId.current;
     } else {
       // Fill in across a fast drag so one stroke is continuous. Only within
       // the stroke: lifting the pen and starting elsewhere leaves the space
       // between untouched, which is the whole point of drawing in pieces.
       const step = from < index ? 1 : -1;
-      const startValue = Number.isFinite(next[from]!) ? next[from]! : value;
+      const startValue = Number.isFinite(values[from]!) ? values[from]! : value;
       const span = Math.abs(index - from);
       for (let k = 0; k <= span; k++) {
-        next[from + k * step] = startValue + ((value - startValue) * k) / span;
+        const i = from + k * step;
+        values[i] = startValue + ((value - startValue) * k) / span;
+        strokes[i] = strokeId.current;
       }
     }
+
     lastIndex.current = index;
-    valuesRef.current = next;
+    const next = { values, strokes };
+    trackRef.current = next;
     onChange(next);
   };
+
+  useViewWheel(canvasRef, viewRef, onViewChange);
 
   return (
     <canvas
@@ -241,6 +258,8 @@ export const DrawPad = ({
         if (disabled) return;
         drawing.current = true;
         lastIndex.current = null;
+        // A fresh id, so this mark stays separate from whatever it lands on.
+        strokeId.current = nextStrokeId(trackRef.current.strokes);
         e.currentTarget.setPointerCapture(e.pointerId);
         write(e);
       }}

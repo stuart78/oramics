@@ -27,14 +27,14 @@ const notarizeReady = Boolean(
 );
 
 if (process.platform === 'darwin') {
-  if (!signing) console.log('[oramics] macOS: signing disabled, building unsigned');
-  else if (!notarizeReady) console.log('[oramics] macOS: signing, but not notarising');
-  else console.log('[oramics] macOS: signing and notarising');
+  if (!signing) console.log('[daphne] macOS: signing disabled, building unsigned');
+  else if (!notarizeReady) console.log('[daphne] macOS: signing, but not notarising');
+  else console.log('[daphne] macOS: signing and notarising');
 }
 
 module.exports = {
-  appId: 'net.oramics.workshop',
-  productName: 'Oramics',
+  appId: 'net.oramics.daphne',
+  productName: 'Daphne',
   copyright: 'After Daphne Oram',
   directories: {
     output: 'release',
@@ -42,7 +42,12 @@ module.exports = {
   },
   // No node_modules: Vite has already bundled everything the renderer uses and
   // the shell has no runtime dependencies.
-  files: ['main.cjs', 'preload.cjs', 'renderer/**/*', 'package.json'],
+  //
+  // A glob rather than a list of names. Naming each file meant that adding
+  // menu.cjs shipped a build whose main process died on `require` at startup,
+  // and nothing caught it, because the app runs fine from source where the file
+  // is simply there on disk.
+  files: ['*.cjs', 'renderer/**/*', 'package.json'],
   publish: [{ provider: 'github', owner: 'stuart78', repo: 'oramics' }],
 
   mac: {
@@ -67,7 +72,7 @@ module.exports = {
   },
 
   dmg: {
-    title: 'Oramics ${version}',
+    title: 'Daphne ${version}',
   },
 
   win: {

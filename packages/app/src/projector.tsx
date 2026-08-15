@@ -8,11 +8,12 @@ import { StrictMode, useEffect, useRef, useState, type JSX } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import type { ProjectorMessage } from './App.js';
-import { LANE_DEFS } from './lanes.js';
+import { LANE_DEFS, type LaneTrack } from './lanes.js';
+import { eachRun } from './ui/runs.js';
 import './ui/styles.css';
 
 interface Frame {
-  lanes: Record<string, Float32Array>;
+  lanes: Record<string, LaneTrack>;
   heads: Record<string, number>;
   hz: number;
   playing: boolean;
@@ -60,7 +61,7 @@ const Projector = (): JSX.Element => {
 
     for (const def of LANE_DEFS) {
       const bandH = (def.weight / totalWeight) * usable;
-      const values = frame.lanes[def.name];
+      const track = frame.lanes[def.name];
 
       ctx.fillStyle = '#141317';
       ctx.fillRect(0, y, w, bandH);
@@ -75,19 +76,28 @@ const Projector = (): JSX.Element => {
         ctx.stroke();
       }
 
-      if (values) {
-        ctx.strokeStyle = '#f2eee6';
-        ctx.lineWidth = 2.5;
-        ctx.lineJoin = 'round';
-        ctx.beginPath();
+      if (track) {
+        // Same run splitting as the editor pad, so the two windows show the
+        // same drawing. Feeding the whole array to one path put a line through
+        // every blank stretch and joined marks that have nothing to do with
+        // each other.
+        const { values } = track;
         const n = values.length;
-        for (let i = 0; i < n; i++) {
-          const px = (i / (n - 1)) * w;
-          const py = y + bandH * (1 - Math.max(0, Math.min(1, values[i]!)));
-          if (i === 0) ctx.moveTo(px, py);
-          else ctx.lineTo(px, py);
-        }
-        ctx.stroke();
+        ctx.strokeStyle = '#f2eee6';
+        ctx.lineWidth = 3.5;
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        eachRun({ values, strokes: track.strokes }, (from, to) => {
+          ctx.beginPath();
+          for (let i = from; i <= to; i++) {
+            const px = (i / (n - 1)) * w;
+            const py = y + bandH * (1 - Math.max(0, Math.min(1, values[i]!)));
+            if (i === from) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          }
+          if (from === to) ctx.lineTo((from / (n - 1)) * w + 0.01, y + bandH * (1 - values[from]!));
+          ctx.stroke();
+        });
       }
 
       ctx.fillStyle = '#6d6878';

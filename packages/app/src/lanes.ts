@@ -47,14 +47,36 @@ export const LANE_DEFS: LaneDef[] = [
 ];
 
 /**
+ * One lane: a value per column, and which stroke put it there.
+ *
+ * The values are what the engine reads and what the extractor will produce from
+ * a scanned sheet. The stroke ids exist only for drawing. A lane holds one
+ * value per column, so a new stroke laid over an old one necessarily replaces
+ * it — there is no second value to keep. Without a record of where one stroke
+ * ended and the next began, the two get joined into a single line and the new
+ * mark reads as an extension of the old one rather than as a mark of its own.
+ *
+ * Zero means "no stroke recorded": blank columns, and anything imported from a
+ * scan, where nobody can say which pen stroke a pixel came from.
+ */
+export interface LaneTrack {
+  /** Normalised 0-1, NaN where nothing was drawn. */
+  values: Float32Array;
+  /** Stroke id per column, 0 where blank or unknown. */
+  strokes: Int32Array;
+}
+
+/**
  * A blank lane is NaN, not a flat line at rest.
  *
  * Blank means "nothing drawn here", which is a different thing from "drawn at
  * zero" and is what a scanned sheet is mostly made of. The engine falls back to
  * the lane's rest value or holds the last one, depending on the lane.
  */
-export const makeLane = (_def: LaneDef): Float32Array =>
-  new Float32Array(LANE_SAMPLES).fill(Number.NaN);
+export const makeLane = (_def?: LaneDef): LaneTrack => ({
+  values: new Float32Array(LANE_SAMPLES).fill(Number.NaN),
+  strokes: new Int32Array(LANE_SAMPLES),
+});
 
 /** A sine, so an untouched timbre still sounds like something. */
 export const makeTimbre = (): Float32Array => {
@@ -81,7 +103,7 @@ export const makeSlideField = (): Float32Array => {
   return field;
 };
 
-export type LaneMap = Record<LaneName, Float32Array>;
+export type LaneMap = Record<LaneName, LaneTrack>;
 
 export const makeAllLanes = (): LaneMap =>
   Object.fromEntries(LANE_DEFS.map((d) => [d.name, makeLane(d)])) as LaneMap;

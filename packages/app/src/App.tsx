@@ -5,17 +5,22 @@ import { randomSlideField, type Fidelity } from '@oramics/engine';
 import { AudioClient } from './audio/client.js';
 import { LANE_ORDER } from './audio/protocol.js';
 import { exportSessionPdf } from './export.js';
+import type { SessionSettings } from './session.js';
+import { openSession, saveSession } from './sessionFile.js';
+import type { ShellCommand } from './shell.js';
 import {
   LANE_DEFS,
   SLIDE_HEIGHT,
   SLIDE_WIDTH,
   makeAllLanes,
-  makeSlideField,
   type LaneMap,
+  type LaneTrack,
 } from './lanes.js';
 import { DrawPad } from './ui/DrawPad.js';
 import { PaintPad } from './ui/PaintPad.js';
+import { Ruler } from './ui/Ruler.js';
 import { applyTheme, initialTheme, type Theme } from './ui/theme.js';
+import { FULL, follow, zoomAt, type View } from './ui/view.js';
 
 /** Matches the printed sheet: 300 mm of field at 10 mm/s. */
 const DURATION_S = 30;
@@ -40,7 +45,7 @@ const SLIDE_PUSH_MS = 90;
  * structured-cloning every lane on every meter tick.
  */
 export type ProjectorMessage =
-  | { kind: 'lanes'; lanes: Record<string, Float32Array> }
+  | { kind: 'lanes'; lanes: Record<string, LaneTrack> }
   | { kind: 'transport'; heads: Record<string, number>; hz: number; playing: boolean };
 
 export const App = (): JSX.Element => {
@@ -85,6 +90,8 @@ export const App = (): JSX.Element => {
   const [heads, setHeads] = useState<Record<string, number>>({});
   const [hz, setHz] = useState(0);
   const [status, setStatus] = useState('');
+  /** The slice of the sheet on screen. One window, every lane. */
+  const [view, setView] = useState<View>(FULL);
 
   const client = useRef<AudioClient>(null);
   if (client.current === null) client.current = new AudioClient();
@@ -95,7 +102,7 @@ export const App = (): JSX.Element => {
   // Push every lane once the worklet exists; the client queues until then.
   useEffect(() => {
     for (const def of LANE_DEFS) {
-      client.current!.sendLane(def.name, lanes[def.name], DURATION_S);
+      client.current!.sendLane(def.name, lanes[def.name].values, DURATION_S);
     }
     slides.forEach((f, i) => client.current!.sendSlide(i, f));
     // Deliberately once on mount — later edits push individually.
@@ -124,9 +131,24 @@ export const App = (): JSX.Element => {
     channel.current!.postMessage({ kind: 'transport', heads, hz, playing } satisfies ProjectorMessage);
   }, [heads, hz, playing]);
 
-  const updateLane = useCallback((name: keyof LaneMap, values: Float32Array) => {
-    setLanes((prev) => ({ ...prev, [name]: values }));
-    client.current!.sendLane(name, values, DURATION_S);
+  /*
+   * Keep the pitch head in shot while playing.
+   *
+   * Zoomed in, a moving head leaves the window within a second or two and you
+   * end up chasing it by hand. `follow` pages rather than creeps, and returns
+   * the view unchanged while the head is comfortably inside, so this settles
+   * instead of re-rendering on every meter tick.
+   */
+  useEffect(() => {
+    if (!playing) return;
+    const at = heads.pitch;
+    if (at === undefined) return;
+    setView((prev) => follow(prev, at));
+  }, [heads, playing]);
+
+  const updateLane = useCallback((name: keyof LaneMap, track: LaneTrack) => {
+    setLanes((prev) => ({ ...prev, [name]: track }));
+    client.current!.sendLane(name, track.values, DURATION_S);
   }, []);
 
   const pendingSlides = useRef(new Map<number, Float32Array>());
@@ -198,11 +220,71 @@ export const App = (): JSX.Element => {
     }
   };
 
+  const settings = (): SessionSettings => ({ globalSpeed, vibratoCents, fidelity });
+
+  const onSave = async (): Promise<void> => {
+    try {
+      const path = await saveSession({ lanes, slides, settings: settings() });
+      setStatus(path ? `saved ${path}` : 'save cancelled');
+    } catch (err) {
+      setStatus(`save failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const onOpen = async (): Promise<void> => {
+    try {
+      const opened = await openSession(settings());
+      if (!opened) return setStatus('open cancelled');
+
+      const { session, path } = opened;
+      setLanes(session.lanes);
+      setSlides(session.slides);
+      setGlobalSpeed(session.settings.globalSpeed);
+      setVibratoCents(session.settings.vibratoCents);
+      setFidelity(session.settings.fidelity);
+      setView(FULL);
+
+      // Push the lot to the engine. Nothing else does: the individual editors
+      // send their own changes, and none of them fired here.
+      const client_ = client.current!;
+      for (const def of LANE_DEFS) client_.sendLane(def.name, session.lanes[def.name].values, DURATION_S);
+      session.slides.forEach((field, i) => client_.sendSlide(i, field));
+      client_.send({ type: 'globalSpeed', value: session.settings.globalSpeed });
+      client_.send({ type: 'vibratoDepth', cents: session.settings.vibratoCents });
+      client_.send({ type: 'fidelity', patch: session.settings.fidelity });
+
+      setStatus(`opened ${path}`);
+    } catch (err) {
+      setStatus(`open failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  /*
+   * Menu commands.
+   *
+   * Held in a ref rather than resubscribed, because the handlers close over the
+   * lanes and slides and would otherwise tear down and rebuild the listener on
+   * every stroke. The ref is rewritten each render, so a command always reaches
+   * the current one.
+   */
+  const commands = useRef<Record<ShellCommand, () => void>>(null!);
+  commands.current = {
+    open: () => void onOpen(),
+    save: () => void onSave(),
+    'export-pdf': () => void onExport(),
+    'zoom-in': () => setView((v) => zoomAt(v, 0.5, 0.5)),
+    'zoom-out': () => setView((v) => zoomAt(v, 0.5, 2)),
+    'zoom-fit': () => setView(FULL),
+    theme: () => setTheme((t) => (t === 'dark' ? 'light' : 'dark')),
+  };
+
+  useEffect(() => window.oramics?.onCommand((command) => commands.current[command]?.()), []);
+
   return (
     <div className="app">
       <header className="bar">
         <div className="brand">
-          <strong>ORAMICS</strong>
+          <strong>DAPHNE</strong>
           <span className="muted">30.000 s · 1 cm = 1 s</span>
         </div>
 
@@ -264,6 +346,8 @@ export const App = (): JSX.Element => {
           >
             {theme === 'dark' ? 'Light' : 'Dark'}
           </button>
+          <button onClick={onOpen}>Open</button>
+          <button onClick={onSave}>Save</button>
           <button onClick={onExport}>Export PDF</button>
           <button onClick={() => window.oramics?.toggleProjector()}>Projector</button>
         </div>
@@ -296,6 +380,28 @@ export const App = (): JSX.Element => {
       </section>
 
       <main className="lanes">
+        <div className="timeline">
+          <Ruler
+            view={view}
+            onViewChange={setView}
+            duration={DURATION_S}
+            head={heads.pitch ?? null}
+            theme={theme}
+          />
+          <span className="zoom" title="Pinch, or hold ⌘ and scroll over a lane. Shift-scroll to move along, or drag the ruler.">
+            <button
+              onClick={() => setView((v) => zoomAt(v, 0.5, 2))}
+              disabled={view.to - view.from >= 1}
+            >
+              −
+            </button>
+            <span className="value">{((view.to - view.from) * DURATION_S).toFixed(1)} s</span>
+            <button onClick={() => setView((v) => zoomAt(v, 0.5, 0.5))}>+</button>
+            <button onClick={() => setView(FULL)} disabled={view.to - view.from >= 1}>
+              Fit
+            </button>
+          </span>
+        </div>
         {LANE_DEFS.map((def) => (
           <div className="lane" key={def.name}>
             <div className="lane-label">
@@ -304,14 +410,17 @@ export const App = (): JSX.Element => {
               {def.pending && <span className="pending">not yet wired</span>}
             </div>
             <DrawPad
-              values={lanes[def.name]}
-              onChange={(v) => updateLane(def.name, v)}
+              track={lanes[def.name]}
+              onChange={(t) => updateLane(def.name, t)}
               head={heads[def.name] ?? null}
               bipolar={def.bipolar}
               fill={!def.bipolar && def.name !== 'pitch'}
               guides={def.name === 'pitch' ? [0.11, 0.22, 0.44, 0.88] : [0.5]}
               erasing={erasing}
               theme={theme}
+              view={view}
+              onViewChange={setView}
+              duration={DURATION_S}
               height={Math.round(def.weight * 46)}
             />
           </div>

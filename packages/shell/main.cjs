@@ -10,8 +10,10 @@
 
 const { app, BrowserWindow, ipcMain, dialog, screen } = require('electron');
 const fs = require('node:fs');
-const { writeFile } = require('node:fs/promises');
+const { readFile, writeFile } = require('node:fs/promises');
 const path = require('node:path');
+
+const { installMenu } = require('./menu.cjs');
 
 const DEV_URL = process.env.ORAMICS_DEV_URL;
 
@@ -45,7 +47,7 @@ const createEditorWindow = () => {
     minWidth: 1040,
     minHeight: 640,
     backgroundColor: '#0a090c',
-    title: 'Oramics',
+    title: 'Daphne',
     titleBarStyle: 'hiddenInset',
     webPreferences: baseWebPreferences,
   });
@@ -79,7 +81,7 @@ const createProjectorWindow = () => {
     height: bounds.height,
     fullscreen: Boolean(target),
     backgroundColor: '#0a090c',
-    title: 'Oramics — Projector',
+    title: 'Daphne — Projector',
     webPreferences: baseWebPreferences,
   });
   loadEntry(projectorWindow, 'projector.html');
@@ -88,19 +90,62 @@ const createProjectorWindow = () => {
   });
 };
 
-ipcMain.handle('oramics:toggle-projector', () => {
+const toggleProjector = () => {
   if (projectorWindow) {
     projectorWindow.close();
     return false;
   }
   createProjectorWindow();
   return true;
+};
+
+ipcMain.handle('oramics:toggle-projector', toggleProjector);
+
+/**
+ * Hand a menu command to the editor window.
+ *
+ * Addressed to the editor specifically, not to whatever is focused. The
+ * projector holds no state and would not know what to do with Save, and on a
+ * two-screen setup it is often the window in front.
+ */
+const sendCommand = (command) => {
+  if (command === 'projector') return void toggleProjector();
+  editorWindow?.webContents.send('oramics:command', command);
+};
+
+// The performance file. Plain JSON text, so the dialogs offer .json as well
+// and nothing stops anyone opening one in an editor.
+const SESSION_FILTERS = [
+  { name: 'Daphne performance', extensions: ['daphne'] },
+  { name: 'JSON', extensions: ['json'] },
+];
+
+ipcMain.handle('oramics:save-session', async (_event, text) => {
+  const { canceled, filePath } = await dialog.showSaveDialog(editorWindow ?? undefined, {
+    title: 'Save performance',
+    defaultPath: 'performance.daphne',
+    filters: SESSION_FILTERS,
+  });
+  if (canceled || !filePath) return null;
+  await writeFile(filePath, text, 'utf8');
+  return filePath;
+});
+
+ipcMain.handle('oramics:open-session', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(editorWindow ?? undefined, {
+    title: 'Open performance',
+    properties: ['openFile'],
+    filters: SESSION_FILTERS,
+  });
+  const filePath = filePaths?.[0];
+  if (canceled || !filePath) return null;
+  return { path: filePath, text: await readFile(filePath, 'utf8') };
 });
 
 ipcMain.handle('oramics:save-pdf', async (_event, bytes) => {
   const { canceled, filePath } = await dialog.showSaveDialog(editorWindow ?? undefined, {
     title: 'Export sheet',
-    defaultPath: 'oramics-session.pdf',
+    defaultPath: 'daphne-session.pdf',
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   });
   if (canceled || !filePath) return null;
@@ -109,6 +154,7 @@ ipcMain.handle('oramics:save-pdf', async (_event, bytes) => {
 });
 
 app.whenReady().then(() => {
+  installMenu(sendCommand);
   createEditorWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createEditorWindow();

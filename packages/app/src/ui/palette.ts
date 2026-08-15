@@ -13,6 +13,7 @@ export interface PadPalette {
   ink: string;
   fill: string;
   accent: string;
+  muted: string;
 }
 
 const token = (style: CSSStyleDeclaration, name: string, fallback: string): string =>
@@ -27,6 +28,7 @@ export const readPadPalette = (): PadPalette => {
     ink: token(style, '--pad-ink', '#e8e4dd'),
     fill: token(style, '--pad-fill', 'rgba(232,228,221,0.22)'),
     accent: token(style, '--accent', '#ff7a4d'),
+    muted: token(style, '--muted', '#8d8799'),
   };
 };
 

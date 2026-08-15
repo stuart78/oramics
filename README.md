@@ -1,4 +1,4 @@
-# Oramics
+# Daphne
 
 A drawn-sound instrument after Daphne Oram's Oramics machine. You draw the
 sound, on paper or on screen, and the machine plays what you drew.
@@ -6,7 +6,7 @@ sound, on paper or on screen, and the machine plays what you drew.
 Built for running workshops. Print the sheets, let people draw on them, play the
 results.
 
-**[Download v0.0.2](https://github.com/stuart78/oramics/releases/tag/v0.0.2)**
+**[Download v0.0.3](https://github.com/stuart78/oramics/releases/tag/v0.0.3)**
 for macOS, Windows or Linux. The macOS build is signed and notarised, so it
 opens normally. Windows is unsigned and SmartScreen will warn once.
 
@@ -137,11 +137,43 @@ on with your lines printed onto them. Print it, let someone mark it up by hand,
 scan it back. That works because the app and the printed template share one
 geometry module.
 
+## The performance file
+
+**Save** and **Open** read and write `.daphne` files. They hold what was drawn,
+not the scan it came from: by the time a lane reaches the file, a drawn one and
+one lifted off a photographed sheet are the same thing.
+
+The format is plain JSON, one object, no framing and no compression. A workshop
+produces material that outlives the software that made it, so the file has to be
+readable in a text editor without this app. Lane samples are 0 to 1 with `null`
+where nothing was drawn, since blank paper is not the same as a line at the
+bottom of the band. Stroke ranges say which marks were separate. The four
+painted slides are the one concession: 512 x 256 opacity fields written as
+base64, one byte per pixel, with the layout named in the file.
+
+```json
+{
+  "format": "daphne-performance",
+  "version": 1,
+  "duration": 30,
+  "columns": 3000,
+  "lanes": {
+    "pitch": { "values": [null, 0.5], "strokes": [[120, 480]] }
+  },
+  "slides": [{ "width": 512, "height": 256, "layout": "row-major-u8", "opacity": "..." }],
+  "settings": { "globalSpeed": 1, "vibratoCents": 50, "fidelity": {} }
+}
+```
+
+A file written at a different lane resolution or glass size is resampled on the
+way in, and a lane the file does not carry loads blank rather than failing the
+whole load. See [`packages/app/src/session.ts`](packages/app/src/session.ts).
+
 ## Status
 
 Working: the voice, the printable sheets, in-app drawing and painting, the slide
 randomiser, live audio, the projector window, plate reverb, the transport strip,
-and PDF export back onto the same template.
+save and open, a zoomable timeline, and PDF export back onto the same template.
 
 Not yet: importing scanned sheets. That is the `vision` package (registration,
 extraction, the photocell model), and it is the only missing half of the
@@ -235,7 +267,7 @@ Until macOS signing is switched on, Gatekeeper refuses the app unless you
 right-click and Open once, or run:
 
 ```bash
-xattr -dr com.apple.quarantine /Applications/Oramics.app
+xattr -dr com.apple.quarantine /Applications/Daphne.app
 ```
 
 ## Licence and attribution

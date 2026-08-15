@@ -108,6 +108,18 @@ body {
   align-items: baseline;
   gap: 10px;
   letter-spacing: 0.12em;
+  /* Two more buttons in the header than there used to be. Left to wrap, the
+     caption folds into a three-line block and pushes the whole bar taller. */
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.bar .controls {
+  min-width: 0;
+}
+
+.bar button {
+  white-space: nowrap;
 }
 
 .controls {
@@ -226,6 +238,58 @@ button.primary.on {
   border-radius: 3px;
   cursor: crosshair;
   touch-action: none;
+}
+
+/*
+ * The ruler sticks to the top of the scrolling lane list. Zoomed in, the lane
+ * you are working on is often well down the page, and a time scale you have to
+ * scroll back up to read is no use.
+ */
+/*
+ * The timeline row sticks to the top of the scrolling lane list. Zoomed in, the
+ * lane you are working on is often well down the page, and a time scale you
+ * have to scroll back up to read is no use.
+ */
+.timeline {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  background: var(--bg);
+}
+
+.ruler {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  cursor: grab;
+  touch-action: none;
+}
+
+.ruler:active {
+  cursor: grabbing;
+}
+
+.zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.zoom .value {
+  min-width: 44px;
+  text-align: right;
+}
+
+.zoom button {
+  min-width: 26px;
+  padding: 3px 6px;
 }
 
 .timbres {

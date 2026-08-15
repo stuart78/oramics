@@ -59,7 +59,7 @@ export const buildSessionPdf = async (opts: ExportOptions): Promise<Uint8Array> 
 
   const machineOverlays: Overlays = {};
   for (const def of LANE_DEFS) {
-    const values = opts.lanes[def.name];
+    const { values } = opts.lanes[def.name];
     if (opts.omitUntouched !== false && isUntouched(values, def.rest)) continue;
     machineOverlays[def.role] = values;
   }
@@ -74,7 +74,7 @@ export const buildSessionPdf = async (opts: ExportOptions): Promise<Uint8Array> 
     { kind: 'slides', options: { payload: slidesPayload(sheetId), overlays: slideOverlays } },
   ];
 
-  return buildDocument({ pages, title: `Oramics session — ${sheetId}` });
+  return buildDocument({ pages, title: `Daphne session — ${sheetId}` });
 };
 
 /** Hand the PDF to the shell to save, or fall back to a browser download. */
@@ -88,8 +88,8 @@ export const exportSessionPdf = async (opts: ExportOptions): Promise<string | nu
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'oramics-session.pdf';
+  a.download = 'daphne-session.pdf';
   a.click();
   URL.revokeObjectURL(url);
-  return 'oramics-session.pdf';
+  return 'daphne-session.pdf';
 };

@@ -69,8 +69,8 @@ jobs:
       - name: Check the macOS build is signed and stapled
         if: matrix.os == 'macos-latest'
         run: |
-          APP="packages/shell/release/mac-arm64/Oramics.app"
-          [ -d "$APP" ] || APP="packages/shell/release/mac/Oramics.app"
+          APP="packages/shell/release/mac-arm64/Daphne.app"
+          [ -d "$APP" ] || APP="packages/shell/release/mac/Daphne.app"
           echo "== codesign =="
           codesign -dv --verbose=2 "$APP" 2>&1 | grep -E "Authority|TeamIdentifier|flags" || true
           echo "== gatekeeper =="
@@ -82,7 +82,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: oramics-${{ matrix.name }}
+          name: daphne-${{ matrix.name }}
           if-no-files-found: ignore
           retention-days: 14
           path: |
