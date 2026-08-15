@@ -47,6 +47,48 @@ const brightness = (field: Float32Array): number => {
 
 const mean = (xs: number[]): number => xs.reduce((a, b) => a + b, 0) / xs.length;
 
+/**
+ * How much of the edge's shape is carried by its first harmonic.
+ *
+ * Near 1 the stroke is a sine with a wobble on it. Every generated slide used
+ * to land there, because the contour was a harmonic series with a strong
+ * fundamental, and four timbres side by side all looked like the same curve.
+ */
+const fundamentalShare = (field: Float32Array): number => {
+  const contour = Slide.preblurred(field, W, H).topEdgeContour(512);
+  const n = contour.length;
+  const dc = contour.reduce((a, b) => a + b, 0) / n;
+  const mags: number[] = [];
+  for (let h = 1; h <= 16; h++) {
+    let re = 0;
+    let im = 0;
+    for (let i = 0; i < n; i++) {
+      const a = (2 * Math.PI * h * i) / n;
+      re += (contour[i]! - dc) * Math.cos(a);
+      im += (contour[i]! - dc) * Math.sin(a);
+    }
+    mags.push(Math.hypot(re, im) / n);
+  }
+  return mags[0]! / (mags.reduce((a, b) => a + b, 0) + 1e-9);
+};
+
+/** Where the edge sits on the glass on average, -1 bottom rail to 1 top. */
+const edgeCentre = (field: Float32Array): number => {
+  const contour = Slide.preblurred(field, W, H).topEdgeContour(512);
+  return contour.reduce((a, b) => a + b, 0) / contour.length;
+};
+
+/** Rows of enamel in the thinnest column, as a fraction of the height. */
+const thinnestColumn = (field: Float32Array): number => {
+  let thinnest = Infinity;
+  for (let x = 0; x < W; x++) {
+    let rows = 0;
+    for (let y = 0; y < H; y++) if (field[y * W + x]! >= 0.5) rows++;
+    thinnest = Math.min(thinnest, rows);
+  }
+  return thinnest / H;
+};
+
 // ---------------------------------------------------------------------------
 
 test('a seed reproduces a slide exactly', () => {
@@ -123,12 +165,17 @@ test('every generated slide gives the scanner something to lock onto', () => {
 
 test('random slides land at comparable levels', () => {
   // Four timbres get summed, so a slide an order of magnitude quieter than its
-  // neighbours simply vanishes. Breakup was the culprit: a wide hole through to
-  // bare glass drops the spot to the rail, the DC blocker removes that, and the
-  // stroke stops making a tone. Slides ranged over 14x before holes were
-  // narrowed and thin enamel was kept above the loop's lock threshold.
+  // neighbours simply vanishes. Breakup was the culprit: a hole through to bare
+  // glass drops the spot to the rail and the recovery costs far more than the
+  // width of the hole, so three clear columns out of 512 cost seven eighths of
+  // the level. Slides ranged over 14x before holes were dropped entirely and
+  // thin enamel was kept above the loop's lock threshold.
+  //
+  // Run over enough seeds to actually catch it. At sixteen this passed while
+  // roughly one slide in a hundred was still a dud, which is often enough that
+  // somebody in a workshop presses Randomise and gets silence.
   const levels: number[] = [];
-  for (let seed = 1; seed <= 16; seed++) {
+  for (let seed = 1; seed <= 64; seed++) {
     const m = new Machine({ sampleRate: SR });
     m.setSlide(0, Slide.preblurred(randomSlideField(seed).field, W, H));
     const lane = (v: number): Float32Array => new Float32Array(64).fill(v);
@@ -147,6 +194,62 @@ test('random slides land at comparable levels', () => {
     loudest / quietest < 4,
     `levels span ${(loudest / quietest).toFixed(1)}x: ${levels.map((l) => l.toFixed(3)).join(', ')}`,
   );
+});
+
+test('generated strokes are not all the same sine', () => {
+  const shares = Array.from({ length: 48 }, (_, s) => fundamentalShare(randomSlideField(s + 1).field));
+  const sorted = [...shares].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)]!;
+
+  // Measured at 0.37 median with a third of slides under 0.35, against a
+  // generator that used to sit near the top of the range on almost every seed.
+  assert.ok(median < 0.55, `median fundamental share ${median.toFixed(2)}, strokes still sine-like`);
+  assert.ok(
+    shares.filter((f) => f < 0.35).length >= shares.length / 4,
+    `only ${shares.filter((f) => f < 0.35).length}/${shares.length} strokes led with something other than the fundamental`,
+  );
+  // And the other way: some slides should still be simple, or the control has
+  // just moved the monoculture somewhere else.
+  assert.ok(Math.max(...shares) > 0.6, 'no simple strokes left in the range');
+});
+
+test('strokes sit at different heights on the glass', () => {
+  const centres = Array.from({ length: 48 }, (_, s) => edgeCentre(randomSlideField(s + 1).field));
+  const spread = Math.max(...centres) - Math.min(...centres);
+  assert.ok(spread > 0.7, `edge centres only span ${spread.toFixed(2)} of the glass`);
+});
+
+test('a stroke is never painted thinner than the servo can hold', () => {
+  /*
+   * Measured: sweeping thickness against swing and complexity, output level is
+   * flat from about a tenth of the height upward and falls off a cliff below
+   * it — a quarter of the level at 0.06 and a seventh at 0.04. A thin ribbon
+   * gives the loop nothing to fall back into when an overshoot on a steep flank
+   * carries the spot past the paint. So the floor holds however thin the recipe
+   * asks for, including where weight variation would take it.
+   */
+  const rand = mulberry32(4);
+  const recipe = {
+    ...randomRecipe(rand),
+    thickness: 0.01,
+    thicknessVariation: 1,
+    breakup: 0,
+    splotches: 0,
+    ribbons: 1,
+  };
+  const thinnest = thinnestColumn(paintSlideField(recipe, rand));
+  assert.ok(thinnest >= 0.09, `thinnest column was ${(thinnest * 100).toFixed(1)}% of the glass`);
+});
+
+test('splotches add enamel without breaking the stroke', () => {
+  const rand = mulberry32(21);
+  const base = { ...randomRecipe(rand), breakup: 0, ribbons: 1, splotches: 0 };
+  const plain = paintSlideField(base, mulberry32(21));
+  const blobbed = paintSlideField({ ...base, splotches: 3 }, mulberry32(21));
+
+  const ink = (f: Float32Array): number => f.reduce((a, b) => a + b, 0);
+  assert.ok(ink(blobbed) > ink(plain) * 1.02, 'splotches put no extra enamel on the glass');
+  assert.equal(paintedColumns(blobbed), W, 'splotches left a column bare');
 });
 
 test('generating a slide is fast enough to hold a button down', () => {
