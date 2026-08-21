@@ -8,9 +8,8 @@
 
 import {
   buildDocument,
-  machinePayload,
   makeSheetId,
-  slidesPayload,
+  sheetPayload,
   type Overlays,
   type Page,
 } from '@oramics/template';
@@ -57,39 +56,56 @@ const isUntouched = (values: Float32Array, rest: number): boolean => {
 export const buildSessionPdf = async (opts: ExportOptions): Promise<Uint8Array> => {
   const sheetId = (opts.sheetId ?? makeSheetId()).toUpperCase();
 
-  const machineOverlays: Overlays = {};
+  // Bands and timbres share one sheet, so they share one overlay map. The keys
+  // do not collide: lanes are role ids, timbres are WAV1 to WAV4.
+  const overlays: Overlays = {};
   for (const def of LANE_DEFS) {
     const { values } = opts.lanes[def.name];
     if (opts.omitUntouched !== false && isUntouched(values, def.rest)) continue;
-    machineOverlays[def.role] = values;
+    overlays[def.role] = values;
   }
-
-  const slideOverlays: Overlays = {};
   opts.slides.forEach((field, i) => {
-    slideOverlays[`WAV${i + 1}`] = topEdge(field, SLIDE_WIDTH, SLIDE_HEIGHT);
+    overlays[`WAV${i + 1}`] = topEdge(field, SLIDE_WIDTH, SLIDE_HEIGHT);
   });
 
   const pages: Page[] = [
-    { kind: 'machine', options: { payload: machinePayload(sheetId), overlays: machineOverlays } },
-    { kind: 'slides', options: { payload: slidesPayload(sheetId), overlays: slideOverlays } },
+    { kind: 'machine', options: { payload: sheetPayload(sheetId), overlays } },
   ];
 
   return buildDocument({ pages, title: `Daphne session — ${sheetId}` });
 };
 
-/** Hand the PDF to the shell to save, or fall back to a browser download. */
-export const exportSessionPdf = async (opts: ExportOptions): Promise<string | null> => {
-  const bytes = await buildSessionPdf(opts);
+/**
+ * The sheet with nothing on it, ready to print and hand out.
+ *
+ * The same page the app exports a session onto, so a piece drawn on paper and a
+ * piece drawn on screen land on identical geometry and import the same way.
+ */
+export const buildBlankPdf = async (sheetId?: string): Promise<Uint8Array> => {
+  const id = (sheetId ?? makeSheetId()).toUpperCase();
+  return buildDocument({
+    pages: [{ kind: 'machine', options: { payload: sheetPayload(id) } }],
+    title: `Daphne sheet ${id}`,
+  });
+};
 
+/** Hand a PDF to the shell to save, or fall back to a browser download. */
+const save = async (bytes: Uint8Array, name: string): Promise<string | null> => {
   const shell = window.oramics;
-  if (shell) return shell.savePdf(bytes);
+  if (shell) return shell.savePdf(bytes, name);
 
   const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'daphne-session.pdf';
+  a.download = name;
   a.click();
   URL.revokeObjectURL(url);
-  return 'daphne-session.pdf';
+  return name;
 };
+
+export const exportSessionPdf = async (opts: ExportOptions): Promise<string | null> =>
+  save(await buildSessionPdf(opts), 'daphne-session.pdf');
+
+export const exportBlankPdf = async (sheetId?: string): Promise<string | null> =>
+  save(await buildBlankPdf(sheetId), 'daphne-sheet.pdf');

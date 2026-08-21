@@ -15,6 +15,8 @@ import {
   GUTTER_WIDTH_MM,
   MACHINE,
   MACHINE_RULER_Y_MM,
+  MACHINE_SLIDES_Y_MM,
+  orientationRect,
   NOMINAL_SPEED_MM_PER_S,
   PAGE,
   QR,
@@ -60,22 +62,35 @@ const grey = (v: number): RGB => rgb(v, v, v);
  * be dropped by channel rather than by threshold — better extraction, but only
  * if the sheets go straight from the printer to the scanner.
  */
+/*
+ * Everything printed inside a drawing area is light on purpose.
+ *
+ * The importer calibrates its threshold from the corner squares, which are the
+ * one thing on the sheet guaranteed to be solid, and counts a mark at about 40%
+ * of that. Every rule and frame here prints under a third, so none of them can
+ * reach it however the sheet is lit. The frames used to be 85% of solid, and a
+ * band's own border read as a line drawn along the top of it for the whole
+ * thirty seconds.
+ *
+ * The fiducials, the QR and the running text stay dark: the first two are what
+ * registration and calibration are measured from, and the third is for people.
+ */
 const palettes: Record<GridStyle, Palette> = {
   grey: {
     ink: grey(0),
     muted: grey(0.42),
-    rail: grey(0.15),
-    gridStrong: grey(0.55),
-    grid: grey(0.76),
-    gridFaint: grey(0.88),
+    rail: grey(0.66),
+    gridStrong: grey(0.74),
+    grid: grey(0.84),
+    gridFaint: grey(0.92),
   },
   nonphoto: {
     ink: grey(0),
     muted: grey(0.42),
-    rail: rgb(0.36, 0.63, 0.79),
-    gridStrong: rgb(0.48, 0.74, 0.87),
-    grid: rgb(0.64, 0.85, 0.93),
-    gridFaint: rgb(0.78, 0.91, 0.96),
+    rail: rgb(0.55, 0.75, 0.86),
+    gridStrong: rgb(0.66, 0.83, 0.91),
+    grid: rgb(0.76, 0.89, 0.95),
+    gridFaint: rgb(0.85, 0.94, 0.97),
   },
 };
 
@@ -190,6 +205,16 @@ const drawFiducials = (ctx: Ctx): void => {
     y: ctx.Y(tl.y - 3),
     color: ctx.pal.ink,
     scale: 0.5,
+  });
+
+  // And the same thing for the importer, which cannot read an arrow.
+  const mark = orientationRect();
+  ctx.page.drawRectangle({
+    x: mmToPt(mark.x),
+    y: ctx.Y(mark.y + mark.h),
+    width: mmToPt(mark.w),
+    height: mmToPt(mark.h),
+    color: ctx.pal.ink,
   });
 };
 
@@ -395,7 +420,14 @@ const drawCycleField = (ctx: Ctx, f: Rect): void => {
 // Rulers
 // ---------------------------------------------------------------------------
 
-const drawTimeRuler = (ctx: Ctx, f: Rect, yMm: number = SOLO_RULER_Y_MM): void => {
+const drawTimeRuler = (
+  ctx: Ctx,
+  f: Rect,
+  yMm: number = SOLO_RULER_Y_MM,
+  // The sheet has the timbre strip immediately below the ruler, and the caption
+  // wants the same 10 mm of page. It repeats what the header already says.
+  caption = true,
+): void => {
   const y = yMm;
   hLine(ctx, f.x, f.x + f.w, y, { color: ctx.pal.rail, width: 0.5 });
 
@@ -422,13 +454,15 @@ const drawTimeRuler = (ctx: Ctx, f: Rect, yMm: number = SOLO_RULER_Y_MM): void =
     color: ctx.pal.muted,
     font: ctx.bold,
   });
-  text(
-    ctx,
-    `1 cm = 1 s   ·   ${NOMINAL_SPEED_MM_PER_S} mm/s   ·   read head travels this way >`,
-    f.x + f.w,
-    y + 10.5,
-    { size: 5.5, align: 'right', color: ctx.pal.muted },
-  );
+  if (caption) {
+    text(
+      ctx,
+      `1 cm = 1 s   ·   ${NOMINAL_SPEED_MM_PER_S} mm/s   ·   read head travels this way >`,
+      f.x + f.w,
+      y + 10.5,
+      { size: 5.5, align: 'right', color: ctx.pal.muted },
+    );
+  }
 };
 
 const drawPhaseRuler = (ctx: Ctx, f: Rect): void => {
@@ -572,7 +606,9 @@ const drawBandTimeGrid = (ctx: Ctx, f: Rect): void => {
 
 /** Tiny rail annotations placed inside the band, since the gutter holds the name. */
 const insideLabel = (ctx: Ctx, s: string, x: number, y: number): void =>
-  text(ctx, s, x, y, { size: 4.8, color: ctx.pal.muted });
+  // Printed at rule weight, not text weight: these sit inside the drawing area,
+  // so the importer has to be able to ignore them like any other furniture.
+  text(ctx, s, x, y, { size: 4.8, color: ctx.pal.rail });
 
 /**
  * Keep a label's baseline within its band. Without this the topmost octave
@@ -682,7 +718,10 @@ const drawOverlay = (ctx: Ctx, f: Rect, values: ArrayLike<number>, fill: boolean
         color: grey(0.35),
         opacity: 0.5,
         borderColor: grey(0.08),
-        borderWidth: 0.9,
+        // The top edge is the value, so it has to survive a print and a scan.
+        // At 0.9 pt a steep segment anti-aliased away to nothing and the
+        // importer read the band as blank there.
+        borderWidth: 1.4,
         x: 0,
         y: mmToPt(PAGE.heightMm),
         scale: 1,
@@ -692,7 +731,7 @@ const drawOverlay = (ctx: Ctx, f: Rect, values: ArrayLike<number>, fill: boolean
         ctx.page.drawLine({
           start: { x: mmToPt(run[i - 1]!.x), y: ctx.Y(run[i - 1]!.y) },
           end: { x: mmToPt(run[i]!.x), y: ctx.Y(run[i]!.y) },
-          thickness: 1.1,
+          thickness: 1.4,
           color: grey(0.08),
         });
       }
@@ -732,7 +771,59 @@ const drawCombinedHeader = (
   void payload;
 };
 
-/** One page carrying every time-domain lane as a band. */
+/** The timbre strip: four painted-glass cycles below the time ruler. */
+const drawSlideStrip = (ctx: Ctx, overlays: Overlays | undefined): void => {
+  gutterLabel(ctx, 'TIMBRES', MACHINE_SLIDES_Y_MM + 4, { font: ctx.bold });
+  gutterLabel(ctx, 'one cycle', MACHINE_SLIDES_Y_MM + 8.6, { size: 5 });
+
+  // On its own line above the titles. The strip has no room for a caption
+  // beside them, and this is the instruction people most need.
+  text(
+    ctx,
+    'Each panel is ONE CYCLE of a wave, not a stretch of time. Start and end at the same ' +
+      'height or you will hear a click once per cycle.',
+    FIELD_X_MM,
+    MACHINE_SLIDES_Y_MM - 6.5,
+    { size: 6, color: ctx.pal.muted },
+  );
+
+  slidePanels().forEach((p, i) => {
+    for (let d = 1; d < 12; d++) {
+      vLine(ctx, p.x + (p.w * d) / 12, p.y, p.y + p.h, {
+        color: d === 6 ? ctx.pal.grid : ctx.pal.gridFaint,
+        width: d === 6 ? 0.28 : 0.18,
+      });
+    }
+    for (const v of [0.25, 0.75]) {
+      hLine(ctx, p.x, p.x + p.w, valueToY(p, v), { color: ctx.pal.gridFaint, width: 0.2 });
+    }
+    const centre = valueToY(p, 0.5);
+    hLine(ctx, p.x, p.x + p.w, centre, { color: ctx.pal.rail, width: 0.5 });
+
+    // Before the border and the labels, so neither ends up underneath it.
+    const drawn = overlays?.[`WAV${i + 1}`];
+    if (drawn) drawOverlay(ctx, p, drawn, true);
+
+    box(ctx, p, { color: ctx.pal.rail, width: 0.6 });
+
+    // Titles sit above the panel now that the strip is at the foot of the page
+    // and there is no header block alongside it to collide with. That keeps the
+    // panel itself clear, which matters more at 30 mm than it did at 76.
+    text(ctx, `TIMBRE ${i + 1}`, p.x, p.y - 1.6, { size: 7, font: ctx.bold });
+    insideLabel(ctx, '+1', p.x + p.w - 5.5, p.y + 3.4);
+    insideLabel(ctx, 'zero', p.x + p.w - 7.5, centre - 1);
+    insideLabel(ctx, '-1', p.x + p.w - 5.5, p.y + p.h - 1.5);
+    text(ctx, '0°', p.x, p.y + p.h + 3.2, { size: 5, color: ctx.pal.muted, align: 'centre' });
+    text(ctx, '360°', p.x + p.w, p.y + p.h + 3.2, {
+      size: 5,
+      color: ctx.pal.muted,
+      align: 'centre',
+    });
+  });
+
+};
+
+/** The sheet. Every time-domain lane as a band, with the four timbres beneath. */
 const drawMachineSheet = async (doc: PDFDocument, opts: CombinedOptions): Promise<void> => {
   const ctx = await makeCtx(doc, opts.gridStyle);
   const payloadText = encodePayload(opts.payload);
@@ -755,68 +846,9 @@ const drawMachineSheet = async (doc: PDFDocument, opts: CombinedOptions): Promis
     if (drawn) drawOverlay(ctx, band.rect, drawn, role.kind === 'unipolar');
   }
 
-  drawTimeRuler(ctx, { ...machineFieldRect(), h: 0 }, MACHINE_RULER_Y_MM);
+  drawTimeRuler(ctx, { ...machineFieldRect(), h: 0 }, MACHINE_RULER_Y_MM, false);
+  drawSlideStrip(ctx, opts.overlays);
   drawFooter(ctx, null, opts.payload, payloadText);
-  await drawQr(ctx, payloadText, FIELD_RIGHT_MM - QR.sizeMm, QR.yMm, QR.sizeMm);
-};
-
-/** One page carrying the four painted-glass timbres, 2x2. */
-const drawSlidesSheet = async (doc: PDFDocument, opts: CombinedOptions): Promise<void> => {
-  const ctx = await makeCtx(doc, opts.gridStyle);
-  const payloadText = encodePayload(opts.payload);
-
-  drawFiducials(ctx);
-  drawCombinedHeader(
-    ctx,
-    'ORAMICS — THE FOUR TIMBRES',
-    'Each panel is ONE CYCLE of a wave, not a stretch of time. Draw left to right without doubling back.',
-    opts.payload,
-  );
-
-  const panels = slidePanels();
-  panels.forEach((p, i) => {
-    for (let d = 1; d < 12; d++) {
-      vLine(ctx, p.x + (p.w * d) / 12, p.y, p.y + p.h, {
-        color: d === 6 ? ctx.pal.grid : ctx.pal.gridFaint,
-        width: d === 6 ? 0.28 : 0.18,
-      });
-    }
-    for (const v of [0.25, 0.75]) {
-      hLine(ctx, p.x, p.x + p.w, valueToY(p, v), { color: ctx.pal.gridFaint, width: 0.2 });
-    }
-    const centre = valueToY(p, 0.5);
-    hLine(ctx, p.x, p.x + p.w, centre, { color: ctx.pal.rail, width: 0.5 });
-
-    // Before the border and the labels, so neither ends up underneath it.
-    const drawn = opts.overlays?.[`WAV${i + 1}`];
-    if (drawn) drawOverlay(ctx, p, drawn, true);
-
-    box(ctx, p, { color: ctx.pal.rail, width: 0.6 });
-
-    // Titles live inside the panel: above it they collide with the header
-    // block on the top row, and there is no spare vertical room to gain.
-    text(ctx, `TIMBRE ${i + 1}`, p.x + 2.5, p.y + 6, { size: 9, font: ctx.bold });
-    insideLabel(ctx, '+1', p.x + p.w - 6, p.y + 3.8);
-    insideLabel(ctx, 'zero', p.x + p.w - 8, centre - 1);
-    insideLabel(ctx, '-1', p.x + p.w - 6, p.y + p.h - 1.6);
-    text(ctx, '0°', p.x, p.y + p.h + 3.6, { size: 5, color: ctx.pal.muted, align: 'centre' });
-    text(ctx, '360°', p.x + p.w, p.y + p.h + 3.6, {
-      size: 5,
-      color: ctx.pal.muted,
-      align: 'centre',
-    });
-  });
-
-  text(
-    ctx,
-    'Start and end each cycle at the same height or you will hear a click once per cycle. ' +
-      'Fill solid below the line if you like — Oram painted hers black underneath.',
-    TEXT_LEFT_MM,
-    MACHINE_RULER_Y_MM + 9.5,
-    { size: 6.4 },
-  );
-
-  drawFooter(ctx, getRole('WAV1'), opts.payload, payloadText);
   await drawQr(ctx, payloadText, FIELD_RIGHT_MM - QR.sizeMm, QR.yMm, QR.sizeMm);
 };
 
@@ -895,8 +927,7 @@ export const drawSheet = async (doc: PDFDocument, opts: SheetOptions): Promise<v
 
 export type Page =
   | { kind: 'solo'; options: SheetOptions }
-  | { kind: 'machine'; options: CombinedOptions }
-  | { kind: 'slides'; options: CombinedOptions };
+  | { kind: 'machine'; options: CombinedOptions };
 
 export interface DocumentOptions {
   pages: Page[];
@@ -914,8 +945,7 @@ export const buildDocument = async (opts: DocumentOptions): Promise<Uint8Array> 
   doc.setCreator('@oramics/template');
   for (const page of opts.pages) {
     if (page.kind === 'solo') await drawSheet(doc, page.options);
-    else if (page.kind === 'machine') await drawMachineSheet(doc, page.options);
-    else await drawSlidesSheet(doc, page.options);
+    else await drawMachineSheet(doc, page.options);
   }
   return doc.save();
 };

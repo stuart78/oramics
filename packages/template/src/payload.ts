@@ -28,7 +28,13 @@ import {
   soloFieldRect,
 } from './geometry.js';
 
-export const PAYLOAD_VERSION = 'ORAM1';
+/**
+ * ORAM2 moved the bands up the page and put the four timbres in a strip below
+ * them, on the same sheet. The subdivision is implied by the version rather
+ * than spelled out in the QR, so a layout change has to move the version with
+ * it or an ORAM1 sheet would be read against ORAM2 rectangles.
+ */
+export const PAYLOAD_VERSION = 'ORAM2';
 
 export interface SheetPayload {
   sheetId: string;
@@ -99,33 +105,30 @@ export const soloPayload = (
 });
 
 /**
- * Layout ids for the multi-band sheets. These occupy the ROLE slot, and the
- * band subdivision is looked up from `machineBands()` / `slidePanels()` for
- * the payload version rather than being spelled out in the QR — eight band
+ * Layout id for the whole sheet. It occupies the ROLE slot, and the band and
+ * panel subdivision is looked up from `machineBands()` / `slidePanels()` for
+ * the payload version rather than being spelled out in the QR — twelve
  * rectangles would not fit, and they are fully determined by the version
  * anyway. Bump PAYLOAD_VERSION if the subdivision ever changes.
  */
-export const LAYOUT_MACHINE = 'MACH';
-export const LAYOUT_SLIDES = 'SLID';
+export const LAYOUT_SHEET = 'FULL';
 
-/** Payload for the combined all-lanes sheet. */
-export const machinePayload = (
+/**
+ * Payload for the sheet.
+ *
+ * The declared field is the band region, because that is the one the declared
+ * duration applies to. The timbre strip is phase rather than time and has no
+ * duration to declare, so it comes from `slidePanels()` for this version along
+ * with the band subdivision.
+ */
+export const sheetPayload = (
   sheetId: string,
   durationMs = SHEET_DURATION_S * 1000,
 ): SheetPayload => ({
   sheetId,
   lane: 0,
-  role: LAYOUT_MACHINE,
+  role: LAYOUT_SHEET,
   durationMs,
-  field: relativeToFiducials(machineFieldRect()),
-});
-
-/** Payload for the four-timbre sheet. Its panels are phase, so duration is nominal. */
-export const slidesPayload = (sheetId: string): SheetPayload => ({
-  sheetId,
-  lane: 0,
-  role: LAYOUT_SLIDES,
-  durationMs: 0,
   field: relativeToFiducials(machineFieldRect()),
 });
 

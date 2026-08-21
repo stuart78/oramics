@@ -2,15 +2,13 @@
 
 Printable drawing sheets for contributors. US Legal (8.5 × 14"), landscape.
 
-**Two pages per piece.** Page one carries every time-domain lane as a
-horizontal band. Page two carries the four timbres as one-cycle panels. Two
-things to scan, not thirteen.
+**One page per piece.** Every time-domain lane as a horizontal band, with the
+four timbres in a strip underneath as one-cycle panels. One thing to print, one
+thing to scan, not thirteen.
 
 ```bash
-pnpm template                            # the two-page workshop set
+pnpm template                            # the sheet
 pnpm template -- --neumes                # ...plus the binary pitch sheet
-pnpm template -- --layout machine        # just the all-lanes page
-pnpm template -- --layout slides         # just the four timbres
 pnpm template -- --layout solo --roles AMP1,VIB   # one full page per role
 pnpm template -- --grid nonphoto         # blue grid, for channel dropout
 pnpm template -- --list                  # what roles exist
@@ -19,12 +17,15 @@ pnpm template -- --list                  # what roles exist
 The bands are weighted, not equal: pitch gets roughly twice the height of an
 amplitude lane because it is the only one where vertical position has to be read
 precisely rather than gesturally. Everything else is a contour between two rails
-and survives being 13 to 19 mm tall.
+and survives being 10 to 15 mm tall.
 
-Two things cannot be bands. The **binary pitch grid** needs its bit rows plus a
-write-in row, so `--neumes` gives it a page of its own. The **waveform slides**
-are phase, not time, because they were painted glass rather than film, so they
-get the 2x2 page.
+The **waveform slides** are phase, not time, because they were painted glass
+rather than film. They keep their own panels and their own degree axis, four
+across the same 300 mm field, which is what lets them share the page. Fitting
+them cost the bands 36 mm, so the shallowest is now about 10 mm rather than 13.
+
+One thing still cannot be a band. The **binary pitch grid** needs its bit rows
+plus a write-in row, so `--neumes` gives it a page of its own.
 
 Print at **100% / "Actual size"**. Scaling to fit is survivable, since the
 fiducials correct for it, but it eats into the printer's dead zone and can clip

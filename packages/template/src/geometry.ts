@@ -59,6 +59,43 @@ export const FIDUCIAL_CENTRES = [
 /** Origin of the reference rectangle — field offsets in the QR are relative to this. */
 export const FIDUCIAL_ORIGIN = FIDUCIAL_CENTRES[0];
 
+/**
+ * Machine-readable "this way up": a solid bar under the top-left corner mark.
+ *
+ * Four identical squares at the corners of a rectangle say where the page is
+ * but not which way up it is, and a sheet photographed in portrait registers
+ * perfectly onto its own transpose: every band lands across the page instead of
+ * along it, and the result looks like a reading rather than like a failure. One
+ * asymmetric mark settles it.
+ *
+ * A bar rather than a square, so the fiducial search cannot mistake it for a
+ * fifth corner: anything that far from square is rejected before the corner
+ * quadrilateral is chosen.
+ */
+export const ORIENTATION_MARK = {
+  /*
+   * Big enough to survive a phone.
+   *
+   * At 6 x 2.5 mm it was solid on a flatbed and marginal in a photograph: a
+   * hand-held frame puts about three pixels per millimetre on the page, so the
+   * bar was eight pixels tall before the lens softened it, and the importer fell
+   * back to inferring orientation from the QR. Nine by three and a half survives
+   * the same photograph with room to spare.
+   */
+  widthMm: 9,
+  heightMm: 3.5,
+  /** Centre, in page millimetres. Below the top-left fiducial, in the margin. */
+  xMm: 13,
+  yMm: FIDUCIAL.insetMm + 13,
+} as const;
+
+export const orientationRect = (): Rect => ({
+  x: ORIENTATION_MARK.xMm - ORIENTATION_MARK.widthMm / 2,
+  y: ORIENTATION_MARK.yMm - ORIENTATION_MARK.heightMm / 2,
+  w: ORIENTATION_MARK.widthMm,
+  h: ORIENTATION_MARK.heightMm,
+});
+
 // ---------------------------------------------------------------------------
 // Horizontal bands
 // ---------------------------------------------------------------------------
@@ -149,30 +186,58 @@ export interface Rect {
 }
 
 // ---------------------------------------------------------------------------
-// Combined machine sheet
+// The sheet
 // ---------------------------------------------------------------------------
 //
-// One page carrying every time-domain lane as a horizontal band, because
-// scanning ten separate sheets per piece is not a workshop, it is admin.
+// One page, and one page only. Every time-domain lane as a horizontal band,
+// with the four painted timbres in a strip underneath, because scanning several
+// sheets per piece is not a workshop, it is admin.
 //
 //   11    top margin
 //   18    header — deep enough that the QR's opaque quiet zone ends above the
 //          first band, which is tighter than the solo sheet's constraint
-//  166    bands
-//   11    time ruler (shared by every band)
-//    9.9  bottom margin
+//  130    bands
+//    9.5  time ruler (shared by every band)
+//    8    gap, holding the timbre instruction and the panel titles
+//   26    timbre panels, four across
+//    4    phase labels under the panels
+//    9.4  bottom margin, holding the footer at 209.5
+//  -----
+//  215.9
+//
+// The bands gave up 36 mm to make room for the timbres, and that is what the
+// single page costs. The shallowest band is now about 10.2 mm rather than the
+// 13 it was, which is still a comfortable pen stroke but no longer generous.
+// The field stays 300 mm wide, because the 30-second guarantee is not
+// negotiable, and the header cannot give anything back: it is sized by the
+// QR's opaque quiet zone, and a smaller QR is a symbol a phone might not read.
 
 export const MACHINE = {
   topMarginMm: 11,
   headerHeightMm: 18,
-  bandsHeightMm: 166,
-  rulerHeightMm: 11,
+  bandsHeightMm: 130,
+  rulerHeightMm: 9.5,
   /** Blank strip between bands so a line drawn to a rail stays legible. */
   bandGapMm: 1.6,
+  /** Clear space between the time ruler and the timbre strip. */
+  slidesGapMm: 8,
+  /** Height of a timbre panel. Four across the field gives roughly 2.6:1. */
+  slidesHeightMm: 26,
+  /** Room under the panels for the 0 and 360 degree labels. */
+  slidesLabelHeightMm: 4,
 } as const;
 
-export const MACHINE_BANDS_Y_MM = MACHINE.topMarginMm + MACHINE.headerHeightMm; // 26
-export const MACHINE_RULER_Y_MM = MACHINE_BANDS_Y_MM + MACHINE.bandsHeightMm; // 195
+export const MACHINE_BANDS_Y_MM = MACHINE.topMarginMm + MACHINE.headerHeightMm; // 29
+export const MACHINE_RULER_Y_MM = MACHINE_BANDS_Y_MM + MACHINE.bandsHeightMm; // 158
+export const MACHINE_SLIDES_Y_MM =
+  MACHINE_RULER_Y_MM + MACHINE.rulerHeightMm + MACHINE.slidesGapMm; // 176.5
+
+/** Lowest ink on the sheet before the footer. */
+export const MACHINE_CONTENT_BOTTOM_MM =
+  MACHINE_SLIDES_Y_MM + MACHINE.slidesHeightMm + MACHINE.slidesLabelHeightMm; // 206.5
+
+/** Baseline of the footer strip, which is the last thing on the page. */
+export const FOOTER_Y_MM = PAGE.heightMm - 6.4; // 209.5
 
 /**
  * Relative band heights. Pitch gets the most room because it is the only lane
@@ -220,32 +285,34 @@ export const machineFieldRect = (): Rect => ({
 });
 
 // ---------------------------------------------------------------------------
-// Waveform slide sheet
+// Waveform slides
 // ---------------------------------------------------------------------------
 //
 // The four timbres were painted glass slides, not film: their x axis is phase,
-// not time. They get their own page, laid out 2x2 so each cycle has a sane
-// aspect ratio instead of being smeared across 300 mm.
+// not time. They sit in a strip below the time ruler, four across the same
+// 300 mm field, which puts every panel on the same page as the bands and still
+// leaves each cycle a roughly 2:1 panel rather than one smeared across 300 mm.
 
-export const SLIDE_GRID = { cols: 2, rows: 2, gapXMm: 12, gapYMm: 13 } as const;
+export const SLIDE_GRID = { cols: 4, rows: 1, gapXMm: 9 } as const;
 
 export const slidePanels = (): Rect[] => {
-  const { cols, rows, gapXMm, gapYMm } = SLIDE_GRID;
+  const { cols, gapXMm } = SLIDE_GRID;
   const w = (TIME_FIELD_WIDTH_MM - gapXMm * (cols - 1)) / cols;
-  const h = (MACHINE.bandsHeightMm - gapYMm * (rows - 1)) / rows;
-  const panels: Rect[] = [];
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      panels.push({
-        x: FIELD_X_MM + c * (w + gapXMm),
-        y: MACHINE_BANDS_Y_MM + r * (h + gapYMm),
-        w,
-        h,
-      });
-    }
-  }
-  return panels;
+  return Array.from({ length: cols }, (_, c) => ({
+    x: FIELD_X_MM + c * (w + gapXMm),
+    y: MACHINE_SLIDES_Y_MM,
+    w,
+    h: MACHINE.slidesHeightMm,
+  }));
 };
+
+/** The bounding box of the timbre strip, for registration after a scan. */
+export const slidesFieldRect = (): Rect => ({
+  x: FIELD_X_MM,
+  y: MACHINE_SLIDES_Y_MM,
+  w: TIME_FIELD_WIDTH_MM,
+  h: MACHINE.slidesHeightMm,
+});
 
 export const soloFieldRect = (): Rect => ({
   x: FIELD_X_MM,

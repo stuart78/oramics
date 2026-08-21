@@ -5,7 +5,7 @@ import { parseArgs } from 'node:util';
 
 import { NOMINAL_SPEED_MM_PER_S, SHEET_DURATION_S, TIME_FIELD_WIDTH_MM } from './geometry.js';
 import { ROLES, getRole } from './roles.js';
-import { machinePayload, makeSheetId, slidesPayload, soloPayload } from './payload.js';
+import { makeSheetId, sheetPayload, soloPayload } from './payload.js';
 import { buildDocument, type GridStyle, type Page } from './render.js';
 
 const usage = `
@@ -13,11 +13,11 @@ Generate printable Oramics drawing sheets (US Legal, landscape).
 
   pnpm template -- [options]
 
-By default you get the two-page workshop set: every time-domain lane as a band
-on page one, the four timbres on page two. Two sheets to scan per piece.
+By default you get one sheet: every time-domain lane as a band, with the four
+timbres in a strip underneath. One page to print, one page to scan back.
 
 Options
-  --layout <l>      workshop (default) | machine | slides | solo
+  --layout <l>      sheet (default) | solo
   --roles <a,b,c>   With --layout solo: which roles, one full sheet each.
   --neumes          Add the binary pitch sheet. It needs a page of its own.
   --list            Print the role table and exit.
@@ -28,7 +28,7 @@ Options
 Roles for --layout solo: ${ROLES.map((r) => r.id).join(', ')}
 `;
 
-type Layout = 'workshop' | 'machine' | 'slides' | 'solo';
+type Layout = 'sheet' | 'solo';
 
 const main = async (): Promise<void> => {
   // `pnpm run generate -- --all` forwards the separator itself, and parseArgs
@@ -39,7 +39,7 @@ const main = async (): Promise<void> => {
   const { values } = parseArgs({
     args,
     options: {
-      layout: { type: 'string', default: 'workshop' },
+      layout: { type: 'string', default: 'sheet' },
       roles: { type: 'string' },
       neumes: { type: 'boolean', default: false },
       list: { type: 'boolean', default: false },
@@ -63,8 +63,8 @@ const main = async (): Promise<void> => {
   }
 
   const layout = values.layout as Layout;
-  if (!['workshop', 'machine', 'slides', 'solo'].includes(layout)) {
-    throw new Error(`--layout must be workshop, machine, slides or solo, got "${values.layout}"`);
+  if (!['sheet', 'solo'].includes(layout)) {
+    throw new Error(`--layout must be sheet or solo, got "${values.layout}"`);
   }
 
   const gridStyle = values.grid as GridStyle;
@@ -86,12 +86,7 @@ const main = async (): Promise<void> => {
       });
     });
   } else {
-    if (layout !== 'slides') {
-      pages.push({ kind: 'machine', options: { payload: machinePayload(sheetId), gridStyle } });
-    }
-    if (layout !== 'machine') {
-      pages.push({ kind: 'slides', options: { payload: slidesPayload(sheetId), gridStyle } });
-    }
+    pages.push({ kind: 'machine', options: { payload: sheetPayload(sheetId), gridStyle } });
   }
 
   // The binary pitch grid cannot shrink to a band — twelve bit rows plus a

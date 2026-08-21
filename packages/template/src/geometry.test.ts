@@ -8,11 +8,14 @@ import {
   FIDUCIAL_CENTRES,
   FIELD_RIGHT_MM,
   FIELD_X_MM,
+  FOOTER_Y_MM,
   GUTTER_WIDTH_MM,
   LEFT_MARGIN_MM,
   MACHINE,
   MACHINE_LANES,
+  MACHINE_CONTENT_BOTTOM_MM,
   MACHINE_RULER_Y_MM,
+  MACHINE_SLIDES_Y_MM,
   NOMINAL_SPEED_MM_PER_S,
   PAGE,
   SLIDE_GRID,
@@ -25,14 +28,14 @@ import {
   machineFieldRect,
   qrOuterRect,
   slidePanels,
+  slidesFieldRect,
   soloFieldRect,
   timeToX,
 } from './geometry.js';
 import {
   decodePayload,
   encodePayload,
-  machinePayload,
-  slidesPayload,
+  sheetPayload,
   soloPayload,
 } from './payload.js';
 import { ROLES, getRole } from './roles.js';
@@ -153,8 +156,11 @@ test('the machine bands tile their region exactly, with no overlap', () => {
 });
 
 test('every machine band is tall enough to draw in', () => {
+  // 10 mm, down from 13, because the timbres moved onto this page and the room
+  // had to come from somewhere. Below about this the band stops being a thing
+  // you can put a considered line in and becomes a thing you aim at.
   for (const band of machineBands()) {
-    assert.ok(band.rect.h >= 12, `${band.role} band is only ${band.rect.h.toFixed(1)} mm tall`);
+    assert.ok(band.rect.h >= 10, `${band.role} band is only ${band.rect.h.toFixed(1)} mm tall`);
   }
 });
 
@@ -181,25 +187,66 @@ test('the machine sheet bands clear the header, ruler and fiducials', () => {
   assert.ok(!intersects(qrOuterRect(), region), 'the QR quiet zone would erase the top band');
 });
 
-test('the slide panels tile without overlapping each other', () => {
+test('the four timbre panels sit in one row without overlapping', () => {
   const panels = slidePanels();
-  assert.equal(panels.length, SLIDE_GRID.cols * SLIDE_GRID.rows);
+  assert.equal(panels.length, 4);
+  assert.equal(SLIDE_GRID.rows, 1, 'the strip is one row, so it fits under the bands');
+
   for (let i = 0; i < panels.length; i++) {
+    const p = panels[i]!;
     for (let j = i + 1; j < panels.length; j++) {
-      assert.ok(!intersects(panels[i]!, panels[j]!), `panels ${i} and ${j} overlap`);
+      assert.ok(!intersects(p, panels[j]!), `panels ${i} and ${j} overlap`);
     }
-    assert.ok(panels[i]!.h > 40 && panels[i]!.w > 100, 'a timbre panel is too small to draw a wave in');
+    close(p.y, panels[0]!.y);
+    assert.ok(p.w >= 60 && p.h >= 22, `timbre panel ${i} is ${p.w}x${p.h} mm, too small to draw in`);
+    // Not so letterboxed that a cycle stops looking like a cycle.
+    assert.ok(p.w / p.h < 3.2, `timbre panel ${i} has aspect ${(p.w / p.h).toFixed(1)}:1`);
+  }
+  close(panels[0]!.x, FIELD_X_MM);
+  close(panels[3]!.x + panels[3]!.w, FIELD_RIGHT_MM);
+});
+
+test('the whole sheet fits on one page', () => {
+  // The point of the revision: bands, ruler, timbres and footer on one sheet of
+  // US Legal, in that order, none of them touching.
+  const bands = machineFieldRect();
+  const slides = slidesFieldRect();
+
+  close(bands.y, MACHINE.topMarginMm + MACHINE.headerHeightMm);
+  close(bands.y + bands.h, MACHINE_RULER_Y_MM);
+  assert.ok(
+    MACHINE_RULER_Y_MM + MACHINE.rulerHeightMm <= MACHINE_SLIDES_Y_MM,
+    'the time ruler runs into the timbre strip',
+  );
+  assert.ok(!intersects(bands, slides), 'the bands and the timbres overlap');
+
+  assert.ok(
+    MACHINE_CONTENT_BOTTOM_MM < FOOTER_Y_MM - 2,
+    `content reaches ${MACHINE_CONTENT_BOTTOM_MM} mm and the footer sits at ${FOOTER_Y_MM}`,
+  );
+  // Every mainstream inkjet and laser refuses to print the last ~6.35 mm.
+  assert.ok(
+    PAGE.heightMm - MACHINE_CONTENT_BOTTOM_MM > 6.35,
+    'the timbre strip runs into the printer dead zone',
+  );
+});
+
+test('nothing on the sheet lands under a fiducial or the QR quiet zone', () => {
+  for (const region of [machineFieldRect(), slidesFieldRect()]) {
+    for (const r of fiducialRects()) {
+      assert.ok(!intersects(r, region), `fiducial at (${r.x}, ${r.y}) overlaps a drawing region`);
+    }
+    assert.ok(!intersects(qrOuterRect(), region), 'the QR quiet zone would erase a drawing region');
   }
 });
 
-test('combined-sheet payloads still fit the QR budget', () => {
-  for (const p of [machinePayload('FFFFFFFF'), slidesPayload('FFFFFFFF')]) {
-    const s = encodePayload(p);
-    assert.match(s, /^[0-9A-Z $%*+\-./:]+$/, `payload leaves alphanumeric mode: ${s}`);
-    assert.deepEqual(decodePayload(s), p);
-    const sym = qrcode.create(s, { errorCorrectionLevel: 'Q' });
-    assert.ok(sym.modules.size >= 29, `${p.role} symbol is only ${sym.modules.size} modules`);
-  }
+test('the sheet payload fits the QR budget', () => {
+  const p = sheetPayload('FFFFFFFF');
+  const s = encodePayload(p);
+  assert.match(s, /^[0-9A-Z $%*+\-./:]+$/, `payload leaves alphanumeric mode: ${s}`);
+  assert.deepEqual(decodePayload(s), p);
+  const sym = qrcode.create(s, { errorCorrectionLevel: 'Q' });
+  assert.ok(sym.modules.size >= 29, `${p.role} symbol is only ${sym.modules.size} modules`);
 });
 
 test('payload round-trips', () => {
