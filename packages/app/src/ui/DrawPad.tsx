@@ -33,6 +33,17 @@ export interface DrawPadProps {
   erasing?: boolean;
   /** Only a repaint trigger — the colours come from the CSS tokens. */
   theme?: string;
+  /**
+   * The registered photograph of this band, drawn under everything else.
+   *
+   * A lane carries one value per column, which is what the machine reads and
+   * not what anybody drew. Where a sheet came from paper, the paper is the
+   * piece, and hiding it behind our reading of it would be putting words in the
+   * creator's mouth.
+   */
+  backdrop?: ImageBitmap | null;
+  /** Draw the extracted line over the paper. */
+  showReading?: boolean;
   /** The slice of the sheet on show. Shared across every lane. */
   view: View;
   onViewChange: (next: View) => void;
@@ -54,6 +65,8 @@ export const DrawPad = ({
   guides = [],
   erasing = false,
   theme = 'dark',
+  backdrop = null,
+  showReading = true,
   view,
   onViewChange,
   duration,
@@ -90,6 +103,31 @@ export const DrawPad = ({
     ctx.fillRect(0, 0, w, h);
 
     const span = view.to - view.from;
+
+    /*
+     * The paper first, if there is any.
+     *
+     * Drawn as the slice the view is showing rather than scaled whole, so it
+     * stays registered to the time ruler at every zoom: second 12 on the ruler
+     * is second 12 on the photograph.
+     */
+    if (backdrop) {
+      ctx.save();
+      ctx.globalAlpha = showReading ? 0.85 : 1;
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(
+        backdrop,
+        view.from * backdrop.width,
+        0,
+        Math.max(1, span * backdrop.width),
+        backdrop.height,
+        0,
+        0,
+        w,
+        h,
+      );
+      ctx.restore();
+    }
     /** Sheet fraction to pixels. */
     const px = (f: number): number => ((f - view.from) / span) * w;
 
@@ -140,7 +178,7 @@ export const DrawPad = ({
       to: Math.ceil(view.to * (n - 1)) + 1,
     };
 
-    if (fill) {
+    if (fill && showReading && !backdrop) {
       ctx.fillStyle = pal.fill;
       eachRun(bounds, (from, to) => {
         if (to <= from) return;
@@ -153,7 +191,22 @@ export const DrawPad = ({
       });
     }
 
-    ctx.strokeStyle = pal.ink;
+    if (!showReading) {
+      if (head !== null && head >= view.from && head <= view.to) {
+        ctx.strokeStyle = pal.accent;
+        ctx.lineWidth = 1.5;
+        const x = Math.round(px(head)) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+      }
+      return;
+    }
+
+    // Over paper the reading has to be legible as a separate thing, not as
+    // another pencil line among the ones already there.
+    ctx.strokeStyle = backdrop ? pal.accent : pal.ink;
     ctx.lineWidth = INK_WIDTH;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
@@ -182,7 +235,7 @@ export const DrawPad = ({
       ctx.lineTo(x, h);
       ctx.stroke();
     }
-  }, [bipolar, duration, fill, guides, head, theme, view]);
+  }, [backdrop, bipolar, duration, fill, guides, head, showReading, theme, view]);
 
   useEffect(() => {
     paint();
