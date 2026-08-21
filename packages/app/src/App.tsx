@@ -4,9 +4,11 @@ import { randomSlideField, type Fidelity } from '@oramics/engine';
 
 import { AudioClient } from './audio/client.js';
 import { LANE_ORDER } from './audio/protocol.js';
-import { exportSessionPdf } from './export.js';
+import { exportBlankPdf, exportSessionPdf } from './export.js';
 import type { SessionSettings } from './session.js';
-import { openSession, saveSession } from './sessionFile.js';
+import { readMidiFile } from './midi.js';
+import { isBlank, scanImageFile, toBitmaps } from './scan.js';
+import { openSession, pickImage, pickMidi, saveSession } from './sessionFile.js';
 import type { ShellCommand } from './shell.js';
 import {
   LANE_DEFS,
@@ -92,6 +94,14 @@ export const App = (): JSX.Element => {
   const [status, setStatus] = useState('');
   /** The slice of the sheet on screen. One window, every lane. */
   const [view, setView] = useState<View>(FULL);
+  /**
+   * The registered paper behind each lane, once a sheet has been imported.
+   *
+   * Held as bitmaps so the pads can blit a slice of them per frame. Cleared
+   * whenever the session stops being that sheet.
+   */
+  const [paper, setPaper] = useState<Record<string, ImageBitmap> | null>(null);
+  const [showReading, setShowReading] = useState(true);
 
   const client = useRef<AudioClient>(null);
   if (client.current === null) client.current = new AudioClient();
@@ -220,6 +230,17 @@ export const App = (): JSX.Element => {
     }
   };
 
+  /** The sheet with nothing on it: what a workshop prints and hands out. */
+  const onBlank = async (): Promise<void> => {
+    setStatus('building the sheet…');
+    try {
+      const path = await exportBlankPdf();
+      setStatus(path ? `saved ${path}` : 'cancelled');
+    } catch (err) {
+      setStatus(`failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
   const settings = (): SessionSettings => ({ globalSpeed, vibratoCents, fidelity });
 
   const onSave = async (): Promise<void> => {
@@ -231,6 +252,74 @@ export const App = (): JSX.Element => {
     }
   };
 
+  /**
+   * Import a photograph or scan of a printed sheet.
+   *
+   * Replaces the lanes and slides rather than merging: a sheet is a whole
+   * piece, and the marks on it are the piece. Settings are left alone, since
+   * the paper says nothing about them.
+   */
+  const onScan = async (): Promise<void> => {
+    const file = await pickImage();
+    if (!file) return setStatus('import cancelled');
+
+    setStatus('reading the sheet…');
+    try {
+      const scan = await scanImageFile(file);
+      setLanes(scan.lanes);
+      setSlides(scan.slides);
+      setView(FULL);
+      setPaper(await toBitmaps(scan.paper));
+      setShowReading(true);
+
+      const client_ = client.current!;
+      for (const def of LANE_DEFS) client_.sendLane(def.name, scan.lanes[def.name].values, DURATION_S);
+      scan.slides.forEach((field, i) => client_.sendSlide(i, field));
+
+      const drawn = Object.entries(scan.coverage)
+        .filter(([, c]) => c >= 0.01)
+        .map(([role]) => role);
+      setStatus(
+        isBlank(scan)
+          ? `read ${scan.sheetId ?? 'the sheet'} but found no marks on it`
+          : `imported ${scan.sheetId ?? 'sheet'}: ${drawn.join(', ')} ` +
+              `(fit ${scan.fitMm.toFixed(2)} mm)`,
+      );
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  /**
+   * Import a MIDI file.
+   *
+   * The machine has one pitch strip and four amplitudes, and the four are the
+   * timbres of a single voice rather than four voices, so a chord cannot be
+   * represented. What arrives is one line, and the status says what was given
+   * up to make it.
+   */
+  const onMidi = async (): Promise<void> => {
+    const file = await pickMidi();
+    if (!file) return setStatus('import cancelled');
+
+    setStatus('reading the file…');
+    try {
+      const midi = await readMidiFile(file);
+      setLanes(midi.lanes);
+      setPaper(null);
+      setView(FULL);
+      setGlobalSpeed(midi.rate);
+
+      const client_ = client.current!;
+      for (const def of LANE_DEFS) client_.sendLane(def.name, midi.lanes[def.name].values, DURATION_S);
+      client_.send({ type: 'globalSpeed', value: midi.rate });
+
+      setStatus(`${file.name}: ${midi.summary}`);
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const onOpen = async (): Promise<void> => {
     try {
       const opened = await openSession(settings());
@@ -239,6 +328,8 @@ export const App = (): JSX.Element => {
       const { session, path } = opened;
       setLanes(session.lanes);
       setSlides(session.slides);
+      // A saved performance is not that sheet any more.
+      setPaper(null);
       setGlobalSpeed(session.settings.globalSpeed);
       setVibratoCents(session.settings.vibratoCents);
       setFidelity(session.settings.fidelity);
@@ -272,6 +363,9 @@ export const App = (): JSX.Element => {
     open: () => void onOpen(),
     save: () => void onSave(),
     'export-pdf': () => void onExport(),
+    'export-blank': () => void onBlank(),
+    'import-scan': () => void onScan(),
+    'import-midi': () => void onMidi(),
     'zoom-in': () => setView((v) => zoomAt(v, 0.5, 0.5)),
     'zoom-out': () => setView((v) => zoomAt(v, 0.5, 2)),
     'zoom-fit': () => setView(FULL),
@@ -346,8 +440,27 @@ export const App = (): JSX.Element => {
           >
             {theme === 'dark' ? 'Light' : 'Dark'}
           </button>
+          {paper && (
+            <label className="toggle" title="Show the reading over the paper">
+              <input
+                type="checkbox"
+                checked={showReading}
+                onChange={(e) => setShowReading(e.target.checked)}
+              />
+              Reading
+            </label>
+          )}
+          <button onClick={onScan} title="Read a photo or scan of a printed sheet">
+            Import scan
+          </button>
+          <button onClick={onMidi} title="Read a MIDI file onto the strips">
+            Import MIDI
+          </button>
           <button onClick={onOpen}>Open</button>
           <button onClick={onSave}>Save</button>
+          <button onClick={onBlank} title="Save a printable sheet with nothing on it">
+            Blank sheet
+          </button>
           <button onClick={onExport}>Export PDF</button>
           <button onClick={() => window.oramics?.toggleProjector()}>Projector</button>
         </div>
@@ -418,6 +531,8 @@ export const App = (): JSX.Element => {
               guides={def.name === 'pitch' ? [0.11, 0.22, 0.44, 0.88] : [0.5]}
               erasing={erasing}
               theme={theme}
+              backdrop={paper?.[def.name] ?? null}
+              showReading={showReading}
               view={view}
               onViewChange={setView}
               duration={DURATION_S}

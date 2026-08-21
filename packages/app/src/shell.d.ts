@@ -1,7 +1,7 @@
 /** The surface the Electron preload exposes. Absent when running in a plain browser. */
 export interface OramicsShell {
   /** Show a save dialog and write the PDF. Returns the path, or null if cancelled. */
-  savePdf: (bytes: Uint8Array) => Promise<string | null>;
+  savePdf: (bytes: Uint8Array, name?: string) => Promise<string | null>;
   /** Show a save dialog and write the performance file. Null if cancelled. */
   saveSession: (text: string) => Promise<string | null>;
   /** Show an open dialog and read a performance file. Null if cancelled. */
@@ -13,7 +13,17 @@ export interface OramicsShell {
 }
 
 /** What the menu can ask the editor window to do. */
-export type ShellCommand = 'open' | 'save' | 'export-pdf' | 'zoom-in' | 'zoom-out' | 'zoom-fit' | 'theme';
+export type ShellCommand =
+  | 'open'
+  | 'save'
+  | 'export-pdf'
+  | 'export-blank'
+  | 'import-scan'
+  | 'import-midi'
+  | 'zoom-in'
+  | 'zoom-out'
+  | 'zoom-fit'
+  | 'theme';
 
 declare global {
   interface Window {

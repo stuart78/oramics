@@ -20,9 +20,15 @@ importers:
       '@oramics/engine':
         specifier: workspace:*
         version: link:../engine
+      '@oramics/midi':
+        specifier: workspace:*
+        version: link:../midi
       '@oramics/template':
         specifier: workspace:*
         version: link:../template
+      '@oramics/vision':
+        specifier: workspace:*
+        version: link:../vision
       react:
         specifier: ^19.0.0
         version: 19.2.8
@@ -39,6 +45,9 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^4.3.4
         version: 4.7.0(vite@6.4.3(@types/node@22.20.1)(tsx@4.23.12))
+      pdf-lib:
+        specifier: ^1.17.1
+        version: 1.17.1
       tsx:
         specifier: ^4.19.2
         version: 4.23.12
@@ -47,6 +56,16 @@ importers:
         version: 6.4.3(@types/node@22.20.1)(tsx@4.23.12)
 
   packages/engine:
+    devDependencies:
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.12
+
+  packages/midi:
+    dependencies:
+      '@oramics/template':
+        specifier: workspace:*
+        version: link:../template
     devDependencies:
       tsx:
         specifier: ^4.19.2
@@ -73,6 +92,19 @@ importers:
       '@types/qrcode':
         specifier: ^1.5.5
         version: 1.5.6
+      tsx:
+        specifier: ^4.19.2
+        version: 4.23.12
+
+  packages/vision:
+    dependencies:
+      '@oramics/template':
+        specifier: workspace:*
+        version: link:../template
+      jsqr:
+        specifier: ^1.4.0
+        version: 1.4.0
+    devDependencies:
       tsx:
         specifier: ^4.19.2
         version: 4.23.12
@@ -1516,6 +1548,9 @@ packages:
 
   jsonfile@6.2.1:
     resolution: {integrity: sha512-zwOTdL3rFQ/lRdBnntKVOX6k5cKJwEc1HdilT71BWEu7J41gXIB2MRp+vxduPSwZJPWBxEzv4yH1wYLJGUHX4Q==}
+
+  jsqr@1.4.0:
+    resolution: {integrity: sha512-dxLob7q65Xg2DvstYkRpkYtmKm2sPJ9oFhrhmudT1dZvNFFTlroai3AWSpLey/w5vMcLBXRgOJsbXpdN9HzU/A==}
 
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
@@ -3763,6 +3798,8 @@ snapshots:
       universalify: 2.0.1
     optionalDependencies:
       graceful-fs: 4.2.11
+
+  jsqr@1.4.0: {}
 
   keyv@4.5.4:
     dependencies:

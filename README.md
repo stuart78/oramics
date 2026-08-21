@@ -23,6 +23,8 @@ pnpm test
 |---|---|
 | `engine` | The voice. Plain TypeScript, no Web Audio, no DOM, no Node. |
 | `template` | Printable sheets, and the geometry everything shares. |
+| `vision` | Reading a photographed sheet back: registration and extraction. |
+| `midi` | Reading a MIDI file onto the strips. |
 | `app` | Drawing surfaces, audio client, projector view, PDF export. |
 | `shell` | Electron: windows, external display, save dialog. |
 
@@ -31,6 +33,10 @@ on. The same module runs in the AudioWorklet, in an offline bounce at whatever
 speed the CPU manages, and in a unit test. It can move to WASM or a JUCE plugin
 later without a rewrite. A test asserts that a 128-sample worklet render and an
 offline bounce agree to 1e-9, so a bounce always matches what you heard.
+
+`vision` follows the same rule for the same reason. It takes pixels and returns
+numbers, with no DOM and no Node anywhere in it, so it runs against a canvas in
+the app, against a rendered sheet in a test, and in a watch folder later.
 
 ## The machine
 
@@ -132,10 +138,88 @@ See [`packages/template/README.md`](packages/template/README.md).
 
 ## Round trip
 
-Draw in the app, hit **Export PDF**, and you get the same two sheets people draw
-on with your lines printed onto them. Print it, let someone mark it up by hand,
-scan it back. That works because the app and the printed template share one
-geometry module.
+Draw in the app, hit **Export PDF**, and you get the same sheet people draw on
+with your lines printed onto it. One page: every lane as a band, the four
+timbres in a strip underneath. Print it, let someone mark it up by hand, scan it
+back. That works because the app and the printed template share one geometry
+module.
+
+## Reading a sheet back
+
+**Import scan** takes a photograph or a flatbed scan of a printed sheet and
+turns the marks on it into lanes. Three steps, each of which can fail honestly
+rather than guessing.
+
+**Register.** The four corner squares are found, and a homography solved onto
+their known page coordinates. Print scale, scan DPI, page skew, the angle the
+phone was held at and most lens distortion all drop out together. Measured
+against rendered sheets put through a simulated camera, the worst position error
+anywhere on the page is about a tenth of a millimetre. Three corners are not
+enough and the importer says so instead of fitting a plausible wrong map.
+
+**Describe.** The QR is rectified using that map and decoded, so the sheet says
+which piece it belongs to and how long its field is meant to last.
+
+**Extract.** Each band and panel is sampled where the template says it is. The
+threshold is calibrated from the corner squares, which are the one thing on the
+page guaranteed to be solid black: everything printed is then a known fraction
+of it, so the same setting works for a flatbed scan, a phone under a window and
+a photocopy of a photocopy.
+
+The sheet declares its own printed furniture so the extractor can ignore it. A
+mark is discarded only when it fits entirely inside the strip a printed rule
+occupies, never merely because it sits at the same height, because the centre
+rail on the transport lane is exactly where people draw and the pitch band's
+rules are the octaves. A stroke laid along a printed rail is the one case this
+cannot separate, and it reads as the rail.
+
+### The paper stays
+
+A lane holds one value per column. That is what the machine reads, and it is
+not what anybody drew. A workshop sheet comes back covered in scribbles, words
+and faces, and reducing that to a height per column throws away almost all of
+it. So an imported sheet keeps its registered photograph and every band shows
+the paper, with our reading of it drawn over the top in orange. **Reading** in
+the header turns the overlay off, leaving the sheet as it was drawn.
+
+The timbre panels are not read as contours at all. Oram's slides were painted
+glass and the flying spot answers to the whole field, so a panel is sampled as a
+2-D opacity field and handed to the engine as painted glass. A scribble stays a
+scribble, a drawn face stays a face, and the scanner does with them what the
+machine did. Read as a single edge and filled underneath, every one of them came
+back as the same solid black silhouette.
+
+The threshold sits below what the dashed rules print at, because a workshop runs
+on pencil and pencil is nowhere near solid black. Held above the rules it read a
+firm biro and missed half of what people actually drew.
+
+## Reading a MIDI file
+
+**Import MIDI** lays a `.mid` file onto the strips. The parser is hand-rolled, so
+format 0 and 1, running status and tempo changes anywhere in any track are all
+handled, and the package has no DOM and no Node in it like the others.
+
+The interesting part is not the parsing. The machine has one pitch strip and
+four amplitude strips, and the four amplitudes are the four timbres of a single
+voice rather than four voices. **A chord cannot be represented at all.** Neither
+can two parts at different pitches.
+
+So a file is reduced to one line. The highest sounding note wins, which is what
+a listener hears as the tune, and the importer reports how many notes it dropped
+rather than hiding the loss. The rest goes where it can:
+
+| | |
+|---|---|
+| pitch | the sounding note as a frequency, so the strip is linear in Hertz and octaves fall unevenly, exactly as the machine has them |
+| amplitude | the note's velocity, in the timbre belonging to the part it came from, so an arrangement moving between parts changes timbre |
+| vibrato | the modulation wheel, or the pitch bend where there is no wheel |
+| reverberation | the reverb send, CC 91 |
+| transport | nothing. A blank transport is normal speed, and the file's tempo is already in the note times |
+
+A file longer than thirty seconds is fitted rather than cut: the note times are
+mapped onto the sheet and the transport speed is set so the piece still plays at
+its own tempo. Notes above 1000 Hz have no place on the strip and are counted,
+not clipped silently.
 
 ## The performance file
 
@@ -173,11 +257,14 @@ whole load. See [`packages/app/src/session.ts`](packages/app/src/session.ts).
 
 Working: the voice, the printable sheets, in-app drawing and painting, the slide
 randomiser, live audio, the projector window, plate reverb, the transport strip,
-save and open, a zoomable timeline, and PDF export back onto the same template.
+save and open, a zoomable timeline, PDF export back onto the same template, and
+importing a photograph or scan of a marked-up sheet.
 
-Not yet: importing scanned sheets. That is the `vision` package (registration,
-extraction, the photocell model), and it is the only missing half of the
-workshop loop. You can draw, hear and print. You cannot yet scan back in.
+The loop closes: draw, print, let somebody mark it up by hand, photograph it,
+hear what they drew.
+
+Not yet: a watch folder, so a phone dropping photos into a shared folder imports
+them without anyone touching the machine.
 
 ## Releases
 

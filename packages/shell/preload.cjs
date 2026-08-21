@@ -6,7 +6,7 @@ const { contextBridge, ipcRenderer } = require('electron');
  * shell, no node globals leak across.
  */
 contextBridge.exposeInMainWorld('oramics', {
-  savePdf: (bytes) => ipcRenderer.invoke('oramics:save-pdf', bytes),
+  savePdf: (bytes, name) => ipcRenderer.invoke('oramics:save-pdf', bytes, name),
   saveSession: (text) => ipcRenderer.invoke('oramics:save-session', text),
   openSession: () => ipcRenderer.invoke('oramics:open-session'),
   toggleProjector: () => ipcRenderer.invoke('oramics:toggle-projector'),

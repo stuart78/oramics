@@ -73,13 +73,30 @@ body {
   flex: 0 0 auto;
 }
 
+/*
+ * The bar wraps rather than clipping.
+ *
+ * It has grown a lot — import, open, save, two exports, the projector — and at
+ * anything under a very wide window the last buttons were being cut off at the
+ * right edge instead of moving. A second row is worse than fitting and far
+ * better than a control you cannot reach.
+ */
 .bar {
-  gap: 18px;
+  gap: 14px;
+  flex-wrap: wrap;
+  row-gap: 8px;
 }
 
 /* Utilities sit right; transport and fidelity stay grouped on the left. */
 .bar > :last-child {
   margin-left: auto;
+}
+
+/* Once the bar has wrapped there is no room to push the last group over. */
+@media (max-width: 1500px) {
+  .bar > :last-child {
+    margin-left: 0;
+  }
 }
 
 /*
@@ -240,11 +257,6 @@ button.primary.on {
   touch-action: none;
 }
 
-/*
- * The ruler sticks to the top of the scrolling lane list. Zoomed in, the lane
- * you are working on is often well down the page, and a time scale you have to
- * scroll back up to read is no use.
- */
 /*
  * The timeline row sticks to the top of the scrolling lane list. Zoomed in, the
  * lane you are working on is often well down the page, and a time scale you

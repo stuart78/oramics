@@ -26,6 +26,17 @@ const buildMenu = (send) => {
       { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: () => send('open') },
       { label: 'Save…', accelerator: 'CmdOrCtrl+S', click: () => send('save') },
       { type: 'separator' },
+      {
+        label: 'Import Scan…',
+        accelerator: 'Shift+CmdOrCtrl+I',
+        click: () => send('import-scan'),
+      },
+      { label: 'Import MIDI…', accelerator: 'Shift+CmdOrCtrl+M', click: () => send('import-midi') },
+      {
+        label: 'New Blank Sheet…',
+        accelerator: 'Shift+CmdOrCtrl+N',
+        click: () => send('export-blank'),
+      },
       { label: 'Export PDF…', accelerator: 'Shift+CmdOrCtrl+E', click: () => send('export-pdf') },
       // Windows and Linux have no application menu to hang Quit off.
       ...(isMac ? [] : [{ type: 'separator' }, { role: 'quit' }]),

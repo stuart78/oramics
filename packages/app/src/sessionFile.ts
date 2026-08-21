@@ -43,6 +43,12 @@ export const openSession = async (
   return { session: decodeSession(await file.text(), fallback), path: file.name };
 };
 
+/** Ask for an image of a printed sheet. Always the browser picker: the shell has no image dialog. */
+export const pickImage = (): Promise<File | null> => pickFile('image/*');
+
+/** Ask for a MIDI file. */
+export const pickMidi = (): Promise<File | null> => pickFile('.mid,.midi,audio/midi');
+
 /**
  * A file picker in a plain browser.
  *
@@ -50,11 +56,11 @@ export const openSession = async (
  * the focus race: the window regains focus when the dialog closes either way,
  * and a change event that has not arrived shortly after means cancelled.
  */
-const pickFile = (): Promise<File | null> =>
+const pickFile = (accept = `.${SESSION_EXTENSION},.json,application/json`): Promise<File | null> =>
   new Promise((resolve) => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = `.${SESSION_EXTENSION},.json,application/json`;
+    input.accept = accept;
     let settled = false;
     const finish = (file: File | null): void => {
       if (settled) return;

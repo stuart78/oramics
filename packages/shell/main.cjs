@@ -142,10 +142,10 @@ ipcMain.handle('oramics:open-session', async () => {
   return { path: filePath, text: await readFile(filePath, 'utf8') };
 });
 
-ipcMain.handle('oramics:save-pdf', async (_event, bytes) => {
+ipcMain.handle('oramics:save-pdf', async (_event, bytes, name) => {
   const { canceled, filePath } = await dialog.showSaveDialog(editorWindow ?? undefined, {
     title: 'Export sheet',
-    defaultPath: 'daphne-session.pdf',
+    defaultPath: name || 'daphne-session.pdf',
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   });
   if (canceled || !filePath) return null;
